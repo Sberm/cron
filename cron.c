@@ -110,27 +110,7 @@ static int check_day_of_week(int num)
     return 0;
 }
 
-static int process_ses_minute(const ses *ses)
-{
-    return 0;
-}
-
-static int process_ses_hour(const ses *ses)
-{
-    return 0;
-}
-
-static int process_ses_day_of_month(const ses *ses)
-{
-    return 0;
-}
-
-static int process_ses_month(const ses *ses)
-{
-    return 0;
-}
-
-static int process_ses_day_of_week(const ses *ses)
+static int cron__sched(cron_set *crn_s)
 {
     return 0;
 }
@@ -343,54 +323,56 @@ static int parse(const char *vbuf)
     int len = vec__len(vbuf);
     char tok[NUM_LEN];
     int cnt = 0;
+    cron_set crn_s;
 
+    memset(&crn_s, 0, sizeof(crn_s));
     memset(tok, 0, sizeof(tok));
 
     for (int idx = 0;
          idx < CRON_NUM && get_next_tok(&pos, &len, tok, sizeof(tok));
          ++idx, ++cnt, memset(tok, 0, sizeof(tok))) {
         int tmp;
-        ses ses;
-
-        memset(&ses, 0, sizeof(ses));
+        ses *ses_tmp;
 
         switch (idx) {
         case 0:
-            tmp = parse_ses(tok, &ses);
+            ses_tmp = &crn_s.minute;
+            tmp = parse_ses(tok, ses_tmp);
             if (tmp)
                 return tmp;
-            process_ses_minute(&ses);
             break;
         case 1:
-            tmp = parse_ses(tok, &ses);
+            ses_tmp = &crn_s.hour;
+            tmp = parse_ses(tok, ses_tmp);
             if (tmp)
                 return tmp;
-            process_ses_hour(&ses);
             break;
         case 2:
-            tmp = parse_ses(tok, &ses);
+            ses_tmp = &crn_s.day_of_month;
+            tmp = parse_ses(tok, ses_tmp);
             if (tmp)
                 return tmp;
-            process_ses_day_of_month(&ses);
             break;
         case 3:
-            tmp = parse_ses(tok, &ses);
+            ses_tmp = &crn_s.month;
+            tmp = parse_ses(tok, ses_tmp);
             if (tmp)
                 return tmp;
-            process_ses_month(&ses);
             break;
         case 4:
-            tmp = parse_ses(tok, &ses);
+            ses_tmp = &crn_s.day_of_week;
+            tmp = parse_ses(tok, ses_tmp);
             if (tmp)
                 return tmp;
-            process_ses_day_of_week(&ses);
             break;
         default:
             break;
         }
-
-        pr_debug("ses.start %d ses.end %d ses.step %d ses.range %d\n\n", ses.start, ses.end, ses.step, ses.range);
+        pr_debug("(ses) start %d end %d step %d range %d\n\n", ses_tmp->start, ses_tmp->end, ses_tmp->step, ses_tmp->range);
     }
+
+    cron__sched(&crn_s);
+
     if (cnt < CRON_NUM) {
         pr_err("Only has %d numbers, needs to be %d\n", cnt, CRON_NUM);
         return -1;
