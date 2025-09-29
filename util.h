@@ -3,11 +3,7 @@
 #ifdef DEBUG
 #define pr_debug(...) fprintf(stdout, __VA_ARGS__)
 #else
-#define pr_debug(...)        \
-{                            \
-    if (0)                   \
-        printf(__VA_ARGS__); \
-}
+#define pr_debug(...)
 #endif
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
