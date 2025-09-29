@@ -1,0 +1,424 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
+
+#include "util.h"
+#include "file.h"
+#include "vec.h"
+#include "atoin.h"
+
+#define CRON_NUM 5
+#define NUM_LEN 32
+
+/* stands for start, end, step */
+typedef struct ses {
+    int start;
+    int end;
+    int step;
+    int range;
+} ses;
+
+typedef struct cron_set {
+    ses minute;
+    ses hour;
+    ses day_of_month;
+    ses month;
+    ses day_of_week;
+} cron_set;
+
+/* if no next token, set tok to NULL, and return 0 */
+static int get_next_tok(char **pos, int *len, char *tok, int tok_size)
+{
+    char *start, *end;
+    char *tmp_pos = NULL;
+    size_t num;
+
+    if (pos == NULL || len == NULL || tok == NULL) {
+        pr_err("Some of get_next_tok's pointers are NULL\n");
+        return 0;
+    }
+
+    tmp_pos = *pos;
+
+    if (*len < 0) {
+        pr_err("len can't be negative\n");
+        return 0;
+    }
+
+    /* find the first occurence of non-space */
+    for (start = tmp_pos; start < tmp_pos + *len && *start == ' '; ++start) {}
+    if (start >= tmp_pos + *len) {
+        tok = NULL; 
+        return 0;
+    }
+    for (end = start; end < tmp_pos + *len && *end != ' '; ++end) {}
+    num = min(tok_size, end - start);
+    strncpy(tok, start, num);
+    *len -= num + start - tmp_pos;
+    *pos = end;
+    return num;
+}
+
+static int check_minute(int num)
+{
+    if (num < 0 || num > 59) {
+        pr_err("Bad minute(%d)\n", num);
+        return -1;
+    }
+    pr_debug("Minute %d\n", num);
+    return 0;
+}
+
+static int check_hour(int num)
+{
+    if (num < 0 || num > 23) {
+        pr_err("Bad hour(%d)\n", num);
+        return -1;
+    }
+    pr_debug("Hour %d\n", num);
+    return 0;
+}
+
+static int check_day_of_month(int num)
+{
+    if (num < 1 || num > 31) {
+        pr_err("Bad day of month(%d)\n", num);
+        return -1;
+    }
+    pr_debug("Day of month %d\n", num);
+    return 0;
+}
+
+static int check_month(int num)
+{
+    if (num < 1 || num > 12) {
+        pr_err("Bad month(%d)\n", num);
+        return -1;
+    }
+    pr_debug("Month %d\n", num);
+    return 0;
+}
+
+static int check_day_of_week(int num)
+{
+    if (num < 1 || num > 12) {
+        pr_err("Bad day of week(%d)\n", num);
+        return -1;
+    }
+    pr_debug("Day of week %d\n", num);
+    return 0;
+}
+
+static int process_ses_minute(const ses *ses)
+{
+    return 0;
+}
+
+static int process_ses_hour(const ses *ses)
+{
+    return 0;
+}
+
+static int process_ses_day_of_month(const ses *ses)
+{
+    return 0;
+}
+
+static int process_ses_month(const ses *ses)
+{
+    return 0;
+}
+
+static int process_ses_day_of_week(const ses *ses)
+{
+    return 0;
+}
+
+/* caller will clear ses */
+static int parse_ses(char *tok, ses *ses)
+{
+    char buf[NUM_LEN];
+    char *st = tok;
+    char *pos = tok;
+    int err = 0;
+    int tmp;
+
+    if (tok == NULL || ses == NULL)
+        return -1;
+
+    pr_debug("parsing token %s\n", tok);
+
+    /*
+    (num | *)
+    $num:
+        (- | end)
+        $-:
+            (num | *)
+        $num:
+            (/ | end)
+            $/:
+                (step)
+                $step: end
+        $*:
+            (/ | end)
+            $/:
+                (step)
+                $step: end
+    $*:
+        (- | end)
+        $-:
+            (num)
+                $num:
+                    (/ | end)
+                    $/:
+                        (step)
+                        $step: end
+    */
+
+    if (isdigit(*pos)) {
+        char *end = NULL;
+        for(end = pos; isdigit(*end) && *end; ++end) {}
+        tmp = atoin(pos, end - pos);
+        pos = end;
+        if (!tmp) {
+            pr_err("Can't be converted to integer\n");
+            err = -1;
+            goto out_parse;
+        }
+        ses->start = tmp;
+        if (*pos == '-') {
+            ++pos;
+            ses->range = 1;
+            if (isdigit(*pos)) {
+                char *end = NULL;
+                for(end = pos; isdigit(*end) && *end; ++end) {}
+                tmp = atoin(pos, end - pos);
+                pos = end;
+                if (!tmp) {
+                    pr_err("Can't be converted to integer\n");
+                    err = -1;
+                    goto out_parse;
+                }
+                ses->end = tmp;
+                if (*pos == '/') {
+                    ++pos;
+                    if (isdigit(*pos)) { // step
+                        char *end = NULL;
+                        for(end = pos; isdigit(*end) && *end; ++end) {}
+                        tmp = atoin(pos, end - pos);
+                        pos = end;
+                        if (!tmp) {
+                            pr_err("Can't be converted to integer\n");
+                            err = -1;
+                            goto out_parse;
+                        }
+                        ses->step = tmp;
+                    } else {
+                        pr_err("\'/\' should be followed with a number\n");
+                        err = -1;
+                        goto out_parse;
+                    }
+                } else if (!*pos) {
+                    goto out_parse;
+                } else {
+                    pr_err("Illegal character(%c)\n", *pos);
+                    pr_debug("il cha 1\n");
+                    err = -1;
+                    goto out_parse;
+                }
+            } else if (*pos == '*') {
+                ++pos;
+                ses->end = -1;
+                ses->range = 1;
+                if (*pos == '/') {
+                    ++pos;
+                    if (isdigit(*pos)) { // step
+                        char *end = NULL;
+                        for(end = pos; isdigit(*end) && *end; ++end) {}
+                        tmp = atoin(pos, end - pos);
+                        pos = end;
+                        if (!tmp) {
+                            pr_err("Can't be converted to integer\n");
+                            err = -1;
+                            goto out_parse;
+                        }
+                        ses->step = tmp;
+                        goto out_parse;
+                    } else {
+                        pr_err("\'/\' should be followed with a number\n");
+                        err = -1;
+                        goto out_parse;
+                    }
+                } else if (!*pos) {
+                    goto out_parse;
+                } else {
+                    pr_err("Illegal character(%c)\n", *pos);
+                    pr_debug("il cha 2\n");
+                    err = -1;
+                    goto out_parse;
+                }
+            } else {
+                pr_err("Illegal character(%c)\n", *pos);
+                pr_debug("il cha 3\n");
+                err = -1;
+                goto out_parse;
+            }
+        } else if (!*pos) {
+            goto out_parse;
+        } else {
+            pr_err("Illegal character(%c)\n", *pos);
+            pr_debug("il cha 4\n");
+            err = -1;
+            goto out_parse;
+        }
+    } else if (*pos == '*') {
+        ++pos;
+        ses->start = -1;
+        if (*pos == '-') {
+            ++pos;
+            ses->range = 1;
+            if (isdigit(*pos)) {
+                char *end = NULL;
+                for(end = pos; isdigit(*end) && *end; ++end) {}
+                tmp = atoin(pos, end - pos);
+                pos = end;
+                if (!tmp) {
+                    pr_err("Can't be converted to integer\n");
+                    err = -1;
+                    goto out_parse;
+                }
+                ses->end = tmp;
+                if (*pos == '/') {
+                    ++pos;
+                    if (isdigit(*pos)) {
+                        char *end = NULL;
+                        for(end = pos; isdigit(*end) && *end; ++end) {}
+                        tmp = atoin(pos, end - pos);
+                        pos = end;
+                        if (!tmp) {
+                            pr_err("Can't be converted to integer\n");
+                            err = -1;
+                            goto out_parse;
+                        }
+                        ses->step = tmp;
+                    } else {
+                        pr_err("\'/\' should be followed with a number\n");
+                        err = -1;
+                        goto out_parse;
+                    }
+                } else if (!*pos) {
+                    goto out_parse;
+                } else {
+                    pr_err("Illegal character(%c)\n", *pos);
+                    pr_debug("il cha 5\n");
+                }
+            } else {
+                pr_err("Illegal character(%c)\n", *pos);
+                err = -1;
+                goto out_parse;
+            }
+        } else if (!*pos) {
+            goto out_parse;
+        } else {
+            pr_err("Illegal character(%c)\n", *pos);
+            pr_debug("il cha 6\n");
+            err = -1;
+            goto out_parse;
+        }
+    } else {
+        pr_err("Illegal character(%c)\n", *pos);
+        pr_debug("il cha 7\n");
+        err = -1;
+    }
+out_parse:
+
+    return err;
+}
+
+static int parse(const char *vbuf)
+{
+    /* get the raw pointer */
+    char *pos = __vec__at(vbuf, 0);
+    int len = vec__len(vbuf);
+    char tok[NUM_LEN];
+    int cnt = 0;
+
+    memset(tok, 0, sizeof(tok));
+
+    for (int idx = 0;
+         idx < CRON_NUM && get_next_tok(&pos, &len, tok, sizeof(tok));
+         ++idx, ++cnt, memset(tok, 0, sizeof(tok))) {
+        int tmp;
+        ses ses;
+
+        memset(&ses, 0, sizeof(ses));
+
+        switch (idx) {
+        case 0:
+            tmp = parse_ses(tok, &ses);
+            if (tmp)
+                return tmp;
+            process_ses_minute(&ses);
+            break;
+        case 1:
+            tmp = parse_ses(tok, &ses);
+            if (tmp)
+                return tmp;
+            process_ses_hour(&ses);
+            break;
+        case 2:
+            tmp = parse_ses(tok, &ses);
+            if (tmp)
+                return tmp;
+            process_ses_day_of_month(&ses);
+            break;
+        case 3:
+            tmp = parse_ses(tok, &ses);
+            if (tmp)
+                return tmp;
+            process_ses_month(&ses);
+            break;
+        case 4:
+            tmp = parse_ses(tok, &ses);
+            if (tmp)
+                return tmp;
+            process_ses_day_of_week(&ses);
+            break;
+        default:
+            break;
+        }
+
+        pr_debug("ses.start %d ses.end %d ses.step %d ses.range %d\n\n", ses.start, ses.end, ses.step, ses.range);
+    }
+    if (cnt < CRON_NUM) {
+        pr_err("Only has %d numbers, needs to be %d\n", cnt, CRON_NUM);
+        return -1;
+    }
+    return 0;
+}
+
+static int cron_start()
+{
+    int err = 0;
+    FILE *f = fopen("crontab.txt", "r");
+    char *vbuf = read_line_v(f);
+
+    if (f == NULL) {
+        perror("Failed to open the crontab file");
+        err = -1;
+        goto out;
+    }
+    err = parse(vbuf);
+    if (fclose(f) == EOF) {
+        perror("Failed to close the crontab file");
+        err = -1;
+    }
+out:
+    return err;
+}
+
+int main()
+{
+    return cron_start();
+}
