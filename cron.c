@@ -2,6 +2,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <unistd.h>
+#include <time.h>
 
 #include "util.h"
 #include "file.h"
@@ -110,8 +112,115 @@ static int check_day_of_week(int num)
     return 0;
 }
 
-static int cron__sched(cron_set *crn_s)
+static int cron__check(cron_set *crn_s)
 {
+    /* minute, hour, day of month, month, day of week */
+    time_t raw_time;
+    struct tm *info;
+    int exec = 1;
+
+    if (!crn_s)
+        return 0;
+
+    time(&raw_time);
+    info = localtime(&raw_time);
+
+    // TODO: is it the best order?
+    /* order: month, day of week, day of month, hour, minute */
+    if (crn_s->month.range) {
+        if ((crn_s->month.start <= info->tm_mon || crn_s->month.start == -1) &&
+            (info->tm_mon <= crn_s->month.end || crn_s->month.end == -1)) {
+        } else {
+            exec = 0;
+        }
+    } else {
+        if (crn_s->month.start == info->tm_mon || crn_s->month.start == -1) {
+        } else {
+            exec = 0;
+        }
+    }
+
+    if (crn_s->day_of_week.range) {
+        if ((crn_s->day_of_week.start <= info->tm_mon || crn_s->day_of_week.start == -1) &&
+            (info->tm_mon <= crn_s->day_of_week.end || crn_s->day_of_week.end == -1)) {
+        } else {
+            exec = 0;
+        }
+    } else {
+        if (crn_s->day_of_week.start == info->tm_mon || crn_s->day_of_week.start == -1) {
+        } else {
+            exec = 0;
+        }
+    }
+
+    if (crn_s->day_of_month.range) {
+        if ((crn_s->day_of_month.start <= info->tm_mon || crn_s->day_of_month.start == -1) &&
+            (info->tm_mon <= crn_s->day_of_month.end || crn_s->day_of_month.end == -1)) {
+        } else {
+            exec = 0;
+        }
+    } else {
+        if (crn_s->day_of_month.start == info->tm_mon || crn_s->day_of_month.start == -1) {
+        } else {
+            exec = 0;
+        }
+    }
+
+    if (crn_s->hour.range) {
+        if ((crn_s->hour.start <= info->tm_mon || crn_s->hour.start == -1) &&
+            (info->tm_mon <= crn_s->hour.end || crn_s->hour.end == -1)) {
+        } else {
+            exec = 0;
+        }
+    } else {
+        if (crn_s->hour.start == info->tm_mon || crn_s->hour.start == -1) {
+        } else {
+            exec = 0;
+        }
+    }
+
+    if (crn_s->minute.range) {
+        if ((crn_s->minute.start <= info->tm_mon || crn_s->minute.start == -1) &&
+            (info->tm_mon <= crn_s->minute.end || crn_s->minute.end == -1)) {
+        } else {
+            exec = 0;
+        }
+    } else {
+        if (crn_s->minute.start == info->tm_mon || crn_s->minute.start == -1) {
+        } else {
+            exec = 0;
+        }
+    }
+
+    return exec;
+}
+
+static void exec(char *comm)
+{
+    int pid = fork();
+
+    if (pid == -1) {
+        pr_err("Failed to fork\n");
+        return;
+    } else if (pid == 0) {
+        pr_debug("Executing %s\n", comm);
+        execve(comm, NULL, NULL);
+        perror("execve");
+    }
+}
+
+static int cron__sched(cron_set *crn_s, char *comm)
+{
+    if (crn_s == NULL)
+        return -1;
+
+    while (1) {
+        if (cron__check(crn_s)) {
+            exec(comm);
+            sleep(10000);
+        }
+    }
+
     return 0;
 }
 
@@ -323,6 +432,7 @@ static int parse(const char *vbuf)
     int len = vec__len(vbuf);
     char tok[NUM_LEN];
     int cnt = 0;
+    char comm[256];
     cron_set crn_s;
 
     memset(&crn_s, 0, sizeof(crn_s));
@@ -371,7 +481,17 @@ static int parse(const char *vbuf)
         pr_debug("(ses) start %d end %d step %d range %d\n\n", ses_tmp->start, ses_tmp->end, ses_tmp->step, ses_tmp->range);
     }
 
-    cron__sched(&crn_s);
+    // TODO: replace with memchr
+    for (;pos < (char *)__vec__at(vbuf, 0) + vec__len(vbuf) * vec__mem_size(vbuf) &&
+          *pos == ' '; ++pos) {}
+
+    if (strncpy(comm, pos,
+               min(vec__len(vbuf) * vec__mem_size(vbuf), sizeof(comm))) == 0) {
+        pr_err("Empty command\n");
+        return -1;
+    }
+
+    cron__sched(&crn_s, comm);
 
     if (cnt < CRON_NUM) {
         pr_err("Only has %d numbers, needs to be %d\n", cnt, CRON_NUM);
@@ -380,7 +500,7 @@ static int parse(const char *vbuf)
     return 0;
 }
 
-static int cron_start()
+static int start()
 {
     int err = 0;
     FILE *f = fopen("crontab.txt", "r");
@@ -396,11 +516,13 @@ static int cron_start()
         perror("Failed to close the crontab file");
         err = -1;
     }
+
+    vec__free(vbuf);
 out:
     return err;
 }
 
 int main()
 {
-    return cron_start();
+    return start();
 }

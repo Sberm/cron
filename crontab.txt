@@ -1,3 +1,4 @@
+* * * * * /usr/bin/true
 1-60 2-* *-10 2-10/18 * echo "Hello from cron tab"
 60 2 3 4 5 echo "Hello from cron tab"
 1 1 1 1 1 echo "Hello from cron tab"
