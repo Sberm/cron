@@ -146,12 +146,14 @@ static int cron__check(cron_set *crn_s)
     mon = info->tm_mon + 1;
     wday = info->tm_wday + 1;
 
-    if (min < prev_min + crn_s->minute.step ||
-        hour < prev_hour + crn_s->hour.step ||
-        mday < prev_day_of_month + crn_s->day_of_month.step ||
-        mon < prev_month + crn_s->month.step ||
-        wday < prev_day_of_week + crn_s->day_of_week.step)
+    if (prev_min != -1 &&
+        (min < prev_min + (crn_s->minute.step ? crn_s->minute.step : 1) ||
+         hour < prev_hour + crn_s->hour.step ||
+         mday < prev_day_of_month + crn_s->day_of_month.step ||
+         mon < prev_month + crn_s->month.step ||
+         wday < prev_day_of_week + crn_s->day_of_week.step ))
         return 0;
+
     prev_min = min;
     prev_hour = hour;
     prev_day_of_month = mday;
