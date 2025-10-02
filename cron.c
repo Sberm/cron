@@ -296,7 +296,6 @@ static int cron__sched(cron_set *crn_s, char *comm, int comm_len)
             sleep(ONE_SEC);
         }
     }
-
     return 0;
 }
 
@@ -349,6 +348,7 @@ static int parse_num_lhs(char **pos, ses *ses)
             } else if (!**pos) {
                 return 0;
             } else if (**pos == ',') {
+                ++*pos;
                 parse_ses(pos, ses);
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
@@ -442,6 +442,9 @@ static int parse_asterisk_lhs(char **pos, ses *ses)
             pr_err("Illegal character(%c)\n", **pos);
             return -1;
         }
+    } else if (**pos == ',') {
+        ++*pos;
+        parse_ses(pos, ses);
     } else if (!**pos) {
         return 0;
     } else {

@@ -6,7 +6,7 @@
 
 #define STEP 256
 
-// vbuf is a vector
+/* vbuf is a vector */
 void *read_line_v(FILE *f, char *vbuf)
 {
     int err = 0;
