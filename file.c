@@ -6,10 +6,10 @@
 
 #define STEP 256
 
-void *read_line_v(FILE *f)
+// vbuf is a vector
+void *read_line_v(FILE *f, char *vbuf)
 {
     int err = 0;
-    char *vbuf = vec__new(sizeof(char));
     size_t idx = 0;
     size_t bytes;
 
@@ -45,6 +45,6 @@ void *read_line_v(FILE *f)
 
     pr_debug("%s\n", (char *)__vec__at(vbuf, 0));
 
-    return vbuf;
+    return 0;
 }
 

@@ -300,205 +300,208 @@ static int cron__sched(cron_set *crn_s, char *comm, int comm_len)
     return 0;
 }
 
-/* caller will clear ses */
-static int parse_ses(char *tok, ses *ses)
-{
-    char buf[NUM_LEN];
-    char *st = tok;
-    char *pos = tok;
-    int err = 0;
-    int tmp;
+static int parse_ses(char **pos, ses *ses);
 
-    if (tok == NULL || ses == NULL)
+static int parse_num_lhs(char **pos, ses *ses)
+{
+    char *end = NULL;
+
+    // consumes the number
+    for(end = *pos; isdigit(*end) && *end; ++end) {}
+    int tmp = atoin(*pos, end - *pos);
+    *pos = end;
+    if (!tmp) {
+        pr_err("Can't be converted to integer\n");
+        return -1;
+    }
+    ses->start = tmp;
+    if (**pos == '-') {
+        ++*pos;
+        ses->range = 1;
+        if (isdigit(**pos)) {
+            char *end = NULL;
+
+            for(end = *pos; isdigit(*end) && *end; ++end) {}
+            tmp = atoin(*pos, end - *pos);
+            *pos = end;
+            if (!tmp) {
+                pr_err("Can't be converted to integer\n");
+                return -1;
+            }
+            ses->end = tmp;
+            if (**pos == '/') {
+                ++*pos;
+                if (isdigit(**pos)) { // step
+                    char *end = NULL;
+                    for(end = *pos; isdigit(*end) && *end; ++end) {}
+                    tmp = atoin(*pos, end - *pos);
+                    *pos = end;
+                    if (!tmp) {
+                        pr_err("Can't be converted to integer\n");
+                        return -1;
+                    }
+                    ses->step = tmp;
+                    return 0;
+                } else {
+                    pr_err("\'/\' should be followed with a number\n");
+                    return -1;
+                }
+            } else if (!**pos) {
+                return 0;
+            } else if (**pos == ',') {
+                parse_ses(pos, ses);
+            } else {
+                pr_err("Illegal character(%c)\n", **pos);
+                pr_debug("il cha 1\n");
+                return -1;
+            }
+        } else if (**pos == '*') {
+            ++*pos;
+            ses->end = -1;
+            ses->range = 1;
+            if (**pos == '/') {
+                ++*pos;
+                if (isdigit(**pos)) { // step
+                    char *end = NULL;
+                    for(end = *pos; isdigit(*end) && *end; ++end) {}
+                    tmp = atoin(*pos, end - *pos);
+                    *pos = end;
+                    if (!tmp) {
+                        pr_err("Can't be converted to integer\n");
+                        return -1;
+                    }
+                    ses->step = tmp;
+                    return 0;
+                } else {
+                    pr_err("\'/\' should be followed with a number\n");
+                    return -1;
+                }
+            } else if (!**pos) {
+                return -1;
+            } else {
+                pr_err("Illegal character(%c)\n", **pos);
+                pr_debug("il cha 2\n");
+                return -1;
+            }
+        } else {
+            pr_err("Illegal character(%c)\n", **pos);
+            pr_debug("il cha 3\n");
+            return -1;
+        }
+    } else if (!**pos) {
+        return 0;
+    } else {
+        pr_err("Illegal character(%c)\n", **pos);
+        pr_debug("il cha 4\n");
+        return -1;
+    }
+    return 0;
+}
+
+static int parse_asterisk_lhs(char **pos, ses *ses)
+{
+    ++*pos;
+    ses->start = -1;
+    if (**pos == '-') {
+        ++*pos;
+        ses->range = 1;
+        if (isdigit(**pos)) {
+            char *end = NULL;
+            for(end = *pos; isdigit(*end) && *end; ++end) {}
+            int tmp = atoin(*pos, end - *pos);
+            *pos = end;
+            if (!tmp) {
+                pr_err("Can't be converted to integer\n");
+                return -1;
+            }
+            ses->end = tmp;
+            if (**pos == '/') {
+                ++*pos;
+                if (isdigit(**pos)) {
+                    char *end = NULL;
+                    for(end = *pos; isdigit(*end) && *end; ++end) {}
+                    int tmp = atoin(*pos, end - *pos);
+                    *pos = end;
+                    if (!tmp) {
+                        pr_err("Can't be converted to integer\n");
+                        return -1;
+                    }
+                    ses->step = tmp;
+                } else {
+                    pr_err("\'/\' should be followed with a number\n");
+                    return -1;
+                }
+            } else if (!**pos) {
+                return 0;
+            } else {
+                pr_err("Illegal character(%c)\n", **pos);
+                pr_debug("il cha 5\n");
+                return -1;
+            }
+        } else {
+            pr_err("Illegal character(%c)\n", **pos);
+            return -1;
+        }
+    } else if (!**pos) {
+        return 0;
+    } else {
+        pr_err("Illegal character(%c)\n", **pos);
+        pr_debug("il cha 6\n");
+        return -1;
+    }
+    return 0;
+}
+
+/* caller will clear ses */
+static int parse_ses(char **pos, ses *ses)
+{
+    int err = 0;
+
+    if (pos == NULL || ses == NULL)
         return -1;
 
-    pr_debug("parsing token %s\n", tok);
-
     /*
-    (num | *)
-    $num:
-        (- | end)
-        $-:
-            (num | *)
+    $root:
+        (num | *)
         $num:
-            (/ | end)
-            $/:
-                (step)
-                $step: end
+            (- | , | end)
+            $-:
+                (num | *)
+                $num:
+                    (/ | end)
+                    $/:
+                        (step)
+                        $step:
+                            (end)
+            $,:
+                (root)
         $*:
-            (/ | end)
-            $/:
-                (step)
-                $step: end
-    $*:
-        (- | end)
-        $-:
-            (num)
+            (- | , | end)
+            $-:
+                (num)
                 $num:
                     (/ | end)
                     $/:
                         (step)
                         $step: end
+            $,:
+                (root)
     */
 
-    if (isdigit(*pos)) {
-        char *end = NULL;
-        for(end = pos; isdigit(*end) && *end; ++end) {}
-        tmp = atoin(pos, end - pos);
-        pos = end;
-        if (!tmp) {
-            pr_err("Can't be converted to integer\n");
-            err = -1;
-            goto out_parse;
-        }
-        ses->start = tmp;
-        if (*pos == '-') {
-            ++pos;
-            ses->range = 1;
-            if (isdigit(*pos)) {
-                char *end = NULL;
-                for(end = pos; isdigit(*end) && *end; ++end) {}
-                tmp = atoin(pos, end - pos);
-                pos = end;
-                if (!tmp) {
-                    pr_err("Can't be converted to integer\n");
-                    err = -1;
-                    goto out_parse;
-                }
-                ses->end = tmp;
-                if (*pos == '/') {
-                    ++pos;
-                    if (isdigit(*pos)) { // step
-                        char *end = NULL;
-                        for(end = pos; isdigit(*end) && *end; ++end) {}
-                        tmp = atoin(pos, end - pos);
-                        pos = end;
-                        if (!tmp) {
-                            pr_err("Can't be converted to integer\n");
-                            err = -1;
-                            goto out_parse;
-                        }
-                        ses->step = tmp;
-                    } else {
-                        pr_err("\'/\' should be followed with a number\n");
-                        err = -1;
-                        goto out_parse;
-                    }
-                } else if (!*pos) {
-                    goto out_parse;
-                } else {
-                    pr_err("Illegal character(%c)\n", *pos);
-                    pr_debug("il cha 1\n");
-                    err = -1;
-                    goto out_parse;
-                }
-            } else if (*pos == '*') {
-                ++pos;
-                ses->end = -1;
-                ses->range = 1;
-                if (*pos == '/') {
-                    ++pos;
-                    if (isdigit(*pos)) { // step
-                        char *end = NULL;
-                        for(end = pos; isdigit(*end) && *end; ++end) {}
-                        tmp = atoin(pos, end - pos);
-                        pos = end;
-                        if (!tmp) {
-                            pr_err("Can't be converted to integer\n");
-                            err = -1;
-                            goto out_parse;
-                        }
-                        ses->step = tmp;
-                        goto out_parse;
-                    } else {
-                        pr_err("\'/\' should be followed with a number\n");
-                        err = -1;
-                        goto out_parse;
-                    }
-                } else if (!*pos) {
-                    goto out_parse;
-                } else {
-                    pr_err("Illegal character(%c)\n", *pos);
-                    pr_debug("il cha 2\n");
-                    err = -1;
-                    goto out_parse;
-                }
-            } else {
-                pr_err("Illegal character(%c)\n", *pos);
-                pr_debug("il cha 3\n");
-                err = -1;
-                goto out_parse;
-            }
-        } else if (!*pos) {
-            goto out_parse;
-        } else {
-            pr_err("Illegal character(%c)\n", *pos);
-            pr_debug("il cha 4\n");
-            err = -1;
-            goto out_parse;
-        }
-    } else if (*pos == '*') {
-        ++pos;
-        ses->start = -1;
-        if (*pos == '-') {
-            ++pos;
-            ses->range = 1;
-            if (isdigit(*pos)) {
-                char *end = NULL;
-                for(end = pos; isdigit(*end) && *end; ++end) {}
-                tmp = atoin(pos, end - pos);
-                pos = end;
-                if (!tmp) {
-                    pr_err("Can't be converted to integer\n");
-                    err = -1;
-                    goto out_parse;
-                }
-                ses->end = tmp;
-                if (*pos == '/') {
-                    ++pos;
-                    if (isdigit(*pos)) {
-                        char *end = NULL;
-                        for(end = pos; isdigit(*end) && *end; ++end) {}
-                        tmp = atoin(pos, end - pos);
-                        pos = end;
-                        if (!tmp) {
-                            pr_err("Can't be converted to integer\n");
-                            err = -1;
-                            goto out_parse;
-                        }
-                        ses->step = tmp;
-                    } else {
-                        pr_err("\'/\' should be followed with a number\n");
-                        err = -1;
-                        goto out_parse;
-                    }
-                } else if (!*pos) {
-                    goto out_parse;
-                } else {
-                    pr_err("Illegal character(%c)\n", *pos);
-                    pr_debug("il cha 5\n");
-                }
-            } else {
-                pr_err("Illegal character(%c)\n", *pos);
-                err = -1;
-                goto out_parse;
-            }
-        } else if (!*pos) {
-            goto out_parse;
-        } else {
-            pr_err("Illegal character(%c)\n", *pos);
-            pr_debug("il cha 6\n");
-            err = -1;
-            goto out_parse;
-        }
+    if (isdigit(**pos)) {
+        err = parse_num_lhs(pos, ses);
+        if (err)
+            return err;
+    } else if (**pos == '*') {
+        err = parse_asterisk_lhs(pos, ses);
+        if (err)
+            return err;
     } else {
-        pr_err("Illegal character(%c)\n", *pos);
+        pr_err("Illegal character(%c)\n", **pos);
         pr_debug("il cha 7\n");
-        err = -1;
+        return -1;
     }
-out_parse:
-
-    return err;
+    return 0;
 }
 
 static int parse(const char *vbuf)
@@ -519,11 +522,12 @@ static int parse(const char *vbuf)
          ++idx, ++cnt, memset(tok, 0, sizeof(tok))) {
         int tmp;
         ses *ses_tmp;
+        char *pos = tok;
 
         switch (idx) {
         case 0:
             ses_tmp = &crn_s.minute;
-            tmp = parse_ses(tok, ses_tmp);
+            tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
             if (check_minute(ses_tmp->start) || (ses_tmp->range && check_minute(ses_tmp->end))) {
@@ -533,7 +537,7 @@ static int parse(const char *vbuf)
             break;
         case 1:
             ses_tmp = &crn_s.hour;
-            tmp = parse_ses(tok, ses_tmp);
+            tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
             if (check_hour(ses_tmp->start) || (ses_tmp->range && check_hour(ses_tmp->end))) {
@@ -543,7 +547,7 @@ static int parse(const char *vbuf)
             break;
         case 2:
             ses_tmp = &crn_s.day_of_month;
-            tmp = parse_ses(tok, ses_tmp);
+            tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
             if (check_day_of_month(ses_tmp->start) || (ses_tmp->range && check_day_of_month(ses_tmp->end))) {
@@ -553,7 +557,7 @@ static int parse(const char *vbuf)
             break;
         case 3:
             ses_tmp = &crn_s.month;
-            tmp = parse_ses(tok, ses_tmp);
+            tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
             if (check_month(ses_tmp->start) || (ses_tmp->range && check_month(ses_tmp->end))) {
@@ -563,14 +567,14 @@ static int parse(const char *vbuf)
             break;
         case 4:
             ses_tmp = &crn_s.day_of_week;
-            tmp = parse_ses(tok, ses_tmp);
+            tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
-            break;
-            if (check_day_of_week(ses_tmp->start) || check_day_of_week(ses_tmp->end)) {
+            if (check_day_of_week(ses_tmp->start) || ses_tmp->range && check_day_of_week(ses_tmp->end)) {
                 pr_err("Illegal day of week(start %d end %d step %d)\n", ses_tmp->start, ses_tmp->end, ses_tmp->step);
                 return -1;
             }
+            break;
         default:
             break;
         }
@@ -599,21 +603,36 @@ static int parse(const char *vbuf)
 static int start()
 {
     int err = 0;
-    FILE *f = fopen("crontab.txt", "r");
-    char *vbuf = read_line_v(f);
+    FILE *f;
+    char *vbuf;
 
-    if (f == NULL) {
+    f = fopen("crontab.txt", "r");
+    if (!f) {
         perror("Failed to open the crontab file");
         err = -1;
         goto out;
     }
+
+    vbuf = vec__new(sizeof(char));
+    if (!vbuf) {
+        err = -1;
+        goto out_free_fd;
+    }
+
+    if (read_line_v(f, vbuf)) {
+        err = -1;
+        goto out_free;
+    }
+
     err = parse(vbuf);
+
+out_free:
+    vec__free(vbuf);
+out_free_fd:
     if (fclose(f) == EOF) {
         perror("Failed to close the crontab file");
         err = -1;
     }
-
-    vec__free(vbuf);
 out:
     return err;
 }

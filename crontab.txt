@@ -1,8 +1,7 @@
-* * * * * echo 亲戚朋友都叫我🐯🐯
-
 54-55 23 * * * echo I love China
 * * * * * echo I love China
 1-60 2-* *-10 2-10/18 * echo "Hello from cron tab"
 60 2 3 4 5 echo "Hello from cron tab"
 1 1 1 1 1 echo "Hello from cron tab"
 Another line
+* * * * * echo 亲戚朋友都叫我🐯🐯
