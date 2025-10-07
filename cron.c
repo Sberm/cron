@@ -34,35 +34,24 @@ typedef struct cron_set {
 } cron_set;
 
 /* if no next token, set tok to NULL, and return 0 */
-static int get_next_tok(char **pos, int *len, char *tok, int tok_size)
+static int get_next_tok(char **pos, char *tok, int tok_size)
 {
     char *start, *end;
-    char *tmp_pos = NULL;
     size_t num;
 
-    if (pos == NULL || len == NULL || tok == NULL) {
+    if (!pos || !tok) {
         pr_err("Some of get_next_tok's pointers are NULL\n");
-        return 0;
-    }
-
-    tmp_pos = *pos;
-
-    if (*len < 0) {
-        pr_err("len can't be negative\n");
-        return 0;
+        return -1;
     }
 
     /* find the first occurence of non-space */
-    for (start = tmp_pos; start < tmp_pos + *len && *start == ' '; ++start) {}
-    if (start >= tmp_pos + *len) {
-        tok = NULL; 
-        return 0;
-    }
-    for (end = start; end < tmp_pos + *len && *end != ' '; ++end) {}
+    for (start = *pos; *start && *start == ' '; ++start) {}
+    /* move till the first space */
+    for (end = start; *end && *end != ' '; ++end) {}
+
     num = min(tok_size, end - start);
     strncpy(tok, start, num);
     tok[min(num, tok_size-1)] = '\0';
-    *len -= num + start - tmp_pos;
     *pos = end;
     return num;
 }
@@ -230,7 +219,7 @@ static int cron__check(cron_set *crn_s)
     return exec;
 }
 
-static int get_next_arg(char **pos, int *len, char *arg, int arg_size)
+static int get_next_arg(char **pos, char *arg, int arg_size)
 {
     /*
     // for every occurence of space, one need to consume all of them
@@ -251,16 +240,56 @@ static int get_next_arg(char **pos, int *len, char *arg, int arg_size)
         $' '
             (root)
     */
-    return 0;
+    char sep;
+    char *end = NULL;
+
+    if (!pos || !*pos || !**pos)
+        return -1;
+
+    /* allows multiple spaces, go to the first non-space character */
+    end = *pos;
+    while(*end && *end == ' ')
+        ++end;
+    if (*end)
+        *pos = end;
+
+    if (**pos == '"') {
+        sep = '"';
+        ++*pos;
+    } else {
+        sep = ' ';
+    }
+
+    if (**pos) {
+        int siz = 0;
+        end = *pos;
+
+        while (*end && *end != sep)
+            ++end;
+        if (sep == '"' && !*end) /* hits the end without the matching " */
+            return -1;
+
+        siz = min(end - *pos, arg_size - 1);
+        strncpy(arg, *pos, siz);
+        arg[siz] = '\0';
+        if (sep == '"')
+            *pos = end + 1;
+        else
+            *pos = end;
+        return 0;
+    }
+
+    return -1;
 }
 
-static void exec(char *comm_args, int comm_len)
+static void exec(char *comm_args)
 {
-    int pid = fork();
+    int pid;
     char *args[MAX_ARG] = { NULL }; /* not the safest */
-    char arg[ARG_LEN];
+    char arg[ARG_LEN] = { 0 };
     int idx = 0;
     char comm_strip[COMM_LEN] = { 0 };
+    char *pos = comm_args;
 
     for (int i = 0; i < MAX_ARG; ++i) {
         args[i] = malloc(ARG_LEN);
@@ -271,10 +300,12 @@ static void exec(char *comm_args, int comm_len)
         memset(args[i], 0, ARG_LEN);
     }
 
-    while(idx < MAX_ARG && get_next_arg(&comm_args, &comm_len, arg, sizeof(arg))) { if (idx == 0) // command
+    while(idx < MAX_ARG && !get_next_arg(&pos, arg, sizeof(arg))) {
+        if (idx == 0) // command
             strncpy(comm_strip, arg, ARG_LEN);
-        pr_debug("arg: %s\n", arg);
         strncpy(args[idx], arg, ARG_LEN);
+        pr_debug("arg[%d] = %s\n", idx, arg);
+        memset(arg, 0, ARG_LEN);
         ++idx;
     }
 
@@ -283,16 +314,17 @@ static void exec(char *comm_args, int comm_len)
     else
         args[MAX_ARG - 1] = NULL;
 
+    pid = fork();
     if (pid == -1) {
         pr_err("Failed to fork\n");
         goto out_free;
         return;
     } else if (pid == 0) {
-        pr_debug("Executing %s(len: %lu)\n", comm_strip, strlen(comm_strip));
+        pr_debug("Executing comm %s\n", comm_strip);
         pr_debug("Arguments: ");
         for (int i = 0; i < idx; ++i) {
             if (i < idx - 1)
-                pr_debug("%s,", args[i]);
+                pr_debug("%s, ", args[i]);
             else
                 pr_debug("%s", args[i]);
         }
@@ -308,16 +340,15 @@ out:
     return;
 }
 
-static int cron__sched(cron_set *crn_s, char *comm_args, int comm_len)
+static int cron__sched(cron_set *crn_s, char *comm_args)
 {
     if (crn_s == NULL)
         return -1;
 
     while (1) {
-        if (cron__check(crn_s)) {
-            exec(comm_args, comm_len);
-            sleep(ONE_SEC);
-        }
+        if (cron__check(crn_s))
+            exec(comm_args);
+        sleep(ONE_SEC);
     }
     return 0;
 }
@@ -544,7 +575,7 @@ static int parse(const char *vbuf)
     memset(tok, 0, sizeof(tok));
 
     for (int idx = 0;
-         idx < CRON_NUM && get_next_tok(&pos, &len, tok, sizeof(tok));
+         idx < CRON_NUM && get_next_tok(&pos, tok, sizeof(tok));
          ++idx, ++cnt, memset(tok, 0, sizeof(tok))) {
         int tmp;
         ses *ses_tmp;
@@ -617,8 +648,9 @@ static int parse(const char *vbuf)
         pr_err("Empty command\n");
         return -1;
     }
+    pr_debug("comm_args: %s\n", comm_args);
 
-    cron__sched(&crn_s, comm_args, strlen(comm_args));
+    cron__sched(&crn_s, comm_args);
 
     if (cnt < CRON_NUM) {
         pr_err("Only has %d numbers, needs to be %d\n", cnt, CRON_NUM);
