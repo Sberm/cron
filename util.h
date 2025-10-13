@@ -1,7 +1,7 @@
-#define pr_err(...) fprintf(stderr, __VA_ARGS__)
+#define pr_err(...) fprintf(stderr, ##__VA_ARGS__)
 
 #ifdef DEBUG
-#define pr_debug(...) fprintf(stdout, __VA_ARGS__)
+#define pr_debug(...) fprintf(stdout, ##__VA_ARGS__)
 #else
 #define pr_debug(...)
 #endif

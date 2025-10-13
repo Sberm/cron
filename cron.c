@@ -23,6 +23,7 @@ typedef struct ses {
     int end;
     int step;
     int range;
+    char sched[61]; /* TODO: translate range to sched map */
 } ses;
 
 typedef struct cron_set {
@@ -278,7 +279,6 @@ static int get_next_arg(char **pos, char *arg, int arg_size)
             *pos = end;
         return 0;
     }
-
     return -1;
 }
 
