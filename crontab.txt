@@ -1,4 +1,6 @@
-* * * * * osascript -e 'display dialog "😊" with title "A Happy Face"'
+47 15 * * *  osascript -e 'open location "https://youtu.be/DbTlX9Q39Ok?t=11246"'
+
+40 * * * * osascript -e 'display dialog "😊" with title "A Happy Face"'
 * * * * * echo "I love China" "yo mama"
 * * * * * echo I love China
 1-60 2-* *-10 2-10/18 * echo "Hello from cron tab"

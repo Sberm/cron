@@ -43,7 +43,7 @@ read_out:
     else
         *((char *)__vec__at(vbuf, vec__len(vbuf))) = '\0';
 
-    pr_debug("Read line: \" " "%s" " \"\n", (char *)__vec__at(vbuf, 0));
+    pr_debug("Read: \" " "%s" " \"\n", (char *)__vec__at(vbuf, 0));
 
     return 0;
 }

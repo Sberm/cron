@@ -29,21 +29,27 @@
 #define MIN_DAY_OF_WEEK 1
 #define MAX_DAY_OF_WEEK 7
 
+#define HOME "HOME"
+#define DEFAULT_CRONTAB_FMT "%s/.crontab.txt"
+
 /* stands for start, end, step */
-typedef struct ses {
+typedef struct Ses {
+    /* 
+     * start and end act as temporary variables for parsing,
+     * do not represent the real start and end
+     */
     int start;
     int end;
     int step;
-    int range;
-    char sched[MAX_SCHED]; /* TODO: translate range to sched map */
-} ses;
+    char sched[MAX_SCHED];
+} Ses;
 
 typedef struct cron_set {
-    ses minute;
-    ses hour;
-    ses day_of_month;
-    ses month;
-    ses day_of_week;
+    Ses minute;
+    Ses hour;
+    Ses day_of_month;
+    Ses month;
+    Ses day_of_week;
 } cron_set;
 
 /* if no next token, set tok to NULL, and return 0 */
@@ -124,7 +130,14 @@ static int check_day_of_week(int num)
     return -1;
 }
 
-static int cron__check(cron_set *crn_s)
+int check_bound(const int mn, const int mx, const int val)
+{
+    if (mn <= val && val <= mx)
+        return 1;
+    return 0;
+}
+
+static int cron__should_exec(cron_set *crn_s)
 {
     /* minute, hour, day of month, month, day of week */
     time_t raw_time;
@@ -167,71 +180,25 @@ static int cron__check(cron_set *crn_s)
     prev_month = mon;
     prev_day_of_week = wday;
 
-    // TODO: is it the best order?
-    /* order: month, day of week, day of month, hour, minute */
-    if (crn_s->month.range) {
-        if ((crn_s->month.start <= mon || crn_s->month.start == -1) &&
-            (mon <= crn_s->month.end || crn_s->month.end == -1)) {
-        } else {
-            exec = 0;
-        }
-    } else {
-        if (crn_s->month.start == mon || crn_s->month.start == -1) {
-        } else {
-            exec = 0;
-        }
-    }
+    if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
+        !crn_s->month.sched[mon])
+        exec = 0;
 
-    if (crn_s->day_of_week.range) {
-        if ((crn_s->day_of_week.start <= wday || crn_s->day_of_week.start == -1) &&
-            (wday <= crn_s->day_of_week.end || crn_s->day_of_week.end == -1)) {
-        } else {
-            exec = 0;
-        }
-    } else {
-        if (crn_s->day_of_week.start == wday || crn_s->day_of_week.start == -1) {
-        } else {
-            exec = 0;
-        }
-    }
+    if (check_bound(MIN_DAY_OF_WEEK, MAX_DAY_OF_WEEK, wday) &&
+        !crn_s->day_of_week.sched[wday])
+        exec = 0;
 
-    if (crn_s->day_of_month.range) {
-        if ((crn_s->day_of_month.start <= mday || crn_s->day_of_month.start == -1) &&
-            (mday <= crn_s->day_of_month.end || crn_s->day_of_month.end == -1)) {
-        } else {
-            exec = 0;
-        }
-    } else {
-        if (crn_s->day_of_month.start == mday || crn_s->day_of_month.start == -1) {
-        } else {
-            exec = 0;
-        }
-    }
+    if (check_bound(MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH, mday) &&
+        !crn_s->day_of_month.sched[mday])
+        exec = 0;
+    
+    if (check_bound(MIN_HOUR, MAX_HOUR, hour) &&
+        !crn_s->hour.sched[hour])
+        exec = 0;
 
-    if (crn_s->hour.range) {
-        if ((crn_s->hour.start <= hour || crn_s->hour.start == -1) &&
-            (hour <= crn_s->hour.end || crn_s->hour.end == -1)) {
-        } else {
-            exec = 0;
-        }
-    } else {
-        if (crn_s->hour.start == hour || crn_s->hour.start == -1) {
-        } else {
-            exec = 0;
-        }
-    }
-
-    if (crn_s->minute.range) {
-        if ((crn_s->minute.start <= min || crn_s->minute.start == -1) &&
-            (min <= crn_s->minute.end || crn_s->minute.end == -1)) {
-        } else {
-            exec = 0;
-        }
-    } else {
-        if (crn_s->minute.start == min || crn_s->minute.start == -1) {
-        } else {
-            exec = 0;
-        }
+    if (check_bound(MIN_MINUTE, MAX_MINUTE, min) &&
+        !crn_s->minute.sched[min]) {
+        exec = 0;
     }
 
     return exec;
@@ -275,7 +242,6 @@ static int get_next_arg(char **pos, char *arg, int arg_size)
         sep = '"';
         ++*pos;
     } else if (**pos == '\'') {
-        pr_debug("debug");
         sep = '\'';
         ++*pos;
     } else {
@@ -345,18 +311,18 @@ static void exec(char *comm_args)
         goto out_free;
         return;
     } else if (pid == 0) {
-        pr_debug("Executing comm %s\n", comm_strip);
-        pr_debug("Arguments: ");
+        pr_debug("Command: %s\n", comm_strip);
+        pr_debug("Arguments: [");
         for (int i = 0; i < idx; ++i) {
             if (i < idx - 1)
-                pr_debug("%s, ", args[i]);
+                pr_debug("'%s', ", args[i]);
             else
-                pr_debug("%s", args[i]);
+                pr_debug("'%s'", args[i]);
         }
-        pr_debug("\n");
+        pr_debug("]\n");
         execvp(comm_strip, args);
         perror("execvp");
-        goto out;
+        goto out_free;
     }
 out_free:
     for (int i = 0; i < MAX_ARG; ++i)
@@ -371,7 +337,7 @@ static int cron__sched(cron_set *crn_s, char *comm_args)
         return -1;
 
     while (1) {
-        if (cron__check(crn_s))
+        if (cron__should_exec(crn_s))
             exec(comm_args);
         sleep(ONE_SEC);
     }
@@ -380,14 +346,21 @@ static int cron__sched(cron_set *crn_s, char *comm_args)
 
 static char zero[] = "0";
 static int is_legal(int tmp, char *pos, size_t n) {
-    // char buf[256]; strncpy(buf, pos, n);
-    // pr_debug("tmp: %d buf: %s strncmp: %d\n", tmp, buf, strncmp(pos, zero, min(sizeof(zero), n)));
     return !(tmp == 0 && strncmp(pos, zero, min(sizeof(zero), n)));
 }
 
-static int parse_ses(char **pos, ses *ses);
+static void ses__write_sched(Ses *ses, const int _start, const int _end)
+{
+    const int start = max(0, _start);
+    const int end = min(MAX_SCHED - 1, (_end == -1 ? MAX_SCHED - 1 : _end));
 
-static int parse_num_lhs(char **pos, ses *ses)
+    for (int i = start; i <= end; i++)
+        ses->sched[i] = 1;
+}
+
+static int parse_ses(char **pos, Ses *ses);
+
+static int parse_num_lhs(char **pos, Ses *ses)
 {
     char *end = NULL;
 
@@ -400,9 +373,11 @@ static int parse_num_lhs(char **pos, ses *ses)
     }
     *pos = end;
     ses->start = tmp;
-    if (**pos == '-') {
+    if (!**pos) {
+        ses__write_sched(ses, ses->start, ses->start);
+        return 0;
+    } else if (**pos == '-') {
         ++*pos;
-        ses->range = 1;
         if (isdigit(**pos)) {
             char *end = NULL;
 
@@ -431,11 +406,14 @@ static int parse_num_lhs(char **pos, ses *ses)
                     pr_err("\'/\' should be followed with a number\n");
                     return -1;
                 }
-            } else if (!**pos) {
-                return 0;
             } else if (**pos == ',') {
+                ses__write_sched(ses, ses->start, ses->end);
                 ++*pos;
                 parse_ses(pos, ses);
+            } else if (!**pos) {
+                // single number
+                ses__write_sched(ses, ses->start, ses->end);
+                return 0;
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
                 pr_debug("il cha 1\n");
@@ -444,7 +422,6 @@ static int parse_num_lhs(char **pos, ses *ses)
         } else if (**pos == '*') {
             ++*pos;
             ses->end = -1;
-            ses->range = 1;
             if (**pos == '/') {
                 ++*pos;
                 if (isdigit(**pos)) { // step
@@ -463,7 +440,12 @@ static int parse_num_lhs(char **pos, ses *ses)
                     return -1;
                 }
             } else if (!**pos) {
+                // TODO: this is supposed to be legal, right?
                 return -1;
+            } else if (**pos == ',') {
+                ses__write_sched(ses, ses->start, ses->end);
+                ++*pos;
+                parse_ses(pos, ses);
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
                 pr_debug("il cha 2\n");
@@ -474,8 +456,10 @@ static int parse_num_lhs(char **pos, ses *ses)
             pr_debug("il cha 3\n");
             return -1;
         }
-    } else if (!**pos) {
-        return 0;
+    } else if (**pos == ',') {
+        ses__write_sched(ses, ses->start, ses->start);
+        ++*pos;
+        parse_ses(pos, ses);
     } else {
         pr_err("Illegal character(%c)\n", **pos);
         pr_debug("il cha 4\n");
@@ -484,13 +468,16 @@ static int parse_num_lhs(char **pos, ses *ses)
     return 0;
 }
 
-static int parse_asterisk_lhs(char **pos, ses *ses)
+static int parse_asterisk_lhs(char **pos, Ses *ses)
 {
     ++*pos;
     ses->start = -1;
-    if (**pos == '-') {
+    if (**pos == ',') {
+        ses__write_sched(ses, ses->start, ses->start);
         ++*pos;
-        ses->range = 1;
+        parse_ses(pos, ses);
+    } else if (**pos == '-') {
+        ++*pos;
         if (isdigit(**pos)) {
             char *end = NULL;
             for(end = *pos; isdigit(*end) && *end; ++end) {}
@@ -517,7 +504,13 @@ static int parse_asterisk_lhs(char **pos, ses *ses)
                     pr_err("\'/\' should be followed with a number\n");
                     return -1;
                 }
+            } else if (**pos == ',') {
+                ses__write_sched(ses, ses->start, ses->start);
+                ++*pos;
+                parse_ses(pos, ses);
             } else if (!**pos) {
+                // range of numbers
+                ses__write_sched(ses, ses->start, ses->start);
                 return 0;
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
@@ -528,10 +521,9 @@ static int parse_asterisk_lhs(char **pos, ses *ses)
             pr_err("Illegal character(%c)\n", **pos);
             return -1;
         }
-    } else if (**pos == ',') {
-        ++*pos;
-        parse_ses(pos, ses);
     } else if (!**pos) {
+        // single asterisk, it's gonna be -1 -1
+        ses__write_sched(ses, ses->start, ses->start);
         return 0;
     } else {
         pr_err("Illegal character(%c)\n", **pos);
@@ -542,7 +534,7 @@ static int parse_asterisk_lhs(char **pos, ses *ses)
 }
 
 /* caller will clear ses */
-static int parse_ses(char **pos, ses *ses)
+static int parse_ses(char **pos, Ses *ses)
 {
     int err = 0;
 
@@ -553,28 +545,33 @@ static int parse_ses(char **pos, ses *ses)
     $root:
         (num | *)
         $num:
-            (- | , | end)
+            (end | - | ,)
             $-:
                 (num | *)
                 $num:
-                    (/ | end)
+                    (/ | , | end)
                     $/:
                         (step)
                         $step:
                             (end)
+                    $,:
+                        (root)
             $,:
                 (root)
         $*:
-            (- | , | end)
+            (, | - | end)
+            $,:
+                (root)
             $-:
                 (num)
                 $num:
-                    (/ | end)
+                    (/ | , | end)
                     $/:
                         (step)
                         $step: end
-            $,:
-                (root)
+                    $,:
+                        (root)
+
     */
 
     if (isdigit(**pos)) {
@@ -593,82 +590,79 @@ static int parse_ses(char **pos, ses *ses)
     return 0;
 }
 
-static int parse(const char *vbuf)
+static void ses__get_ranges(const Ses *ses, char *ranges)
+{
+    const char *sched = ses->sched;
+    int prev_start = -1;
+
+    for (int i = 0; i < MAX_SCHED; i++) {
+        if (sched[i]) {
+            if (prev_start == -1)
+                prev_start = i;
+        } else if (!sched[i] && prev_start != -1) {
+            ranges += sprintf(ranges, "%d-%d ", prev_start, i - 1);
+            prev_start = -1;
+        }
+    }
+}
+
+static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm_args_len)
 {
     /* get the raw pointer */
     char *pos = __vec__at(vbuf, 0);
     int len = vec__len(vbuf);
     char tok[NUM_LEN];
     int cnt = 0;
-    char comm_args[COMM_LEN];
-    cron_set crn_s;
     size_t vbuf_siz;
+    char ranges[256];
 
-    memset(&crn_s, 0, sizeof(crn_s));
     memset(tok, 0, sizeof(tok));
 
     for (int idx = 0;
          idx < CRON_NUM && get_next_tok(&pos, tok, sizeof(tok));
          ++idx, ++cnt, memset(tok, 0, sizeof(tok))) {
         int tmp;
-        ses *ses_tmp;
+        Ses *ses_tmp;
         char *pos = tok;
+
+        memset(ranges, 0, sizeof(ranges));
 
         switch (idx) {
         case 0:
-            ses_tmp = &crn_s.minute;
+            ses_tmp = &crn_s->minute;
             tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
-            if (check_minute(ses_tmp->start) || (ses_tmp->range && check_minute(ses_tmp->end))) {
-                pr_err("Illegal minute(start %d end %d step %d)\n", ses_tmp->start, ses_tmp->end, ses_tmp->step);
-                return -1;
-            }
             break;
         case 1:
-            ses_tmp = &crn_s.hour;
+            ses_tmp = &crn_s->hour;
             tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
-            if (check_hour(ses_tmp->start) || (ses_tmp->range && check_hour(ses_tmp->end))) {
-                pr_err("Illegal hour(start %d end %d step %d)\n", ses_tmp->start, ses_tmp->end, ses_tmp->step);
-                return -1;
-            }
             break;
         case 2:
-            ses_tmp = &crn_s.day_of_month;
+            ses_tmp = &crn_s->day_of_month;
             tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
-            if (check_day_of_month(ses_tmp->start) || (ses_tmp->range && check_day_of_month(ses_tmp->end))) {
-                pr_err("Illegal day of month(start %d end %d step %d)\n", ses_tmp->start, ses_tmp->end, ses_tmp->step);
-                return -1;
-            }
             break;
         case 3:
-            ses_tmp = &crn_s.month;
+            ses_tmp = &crn_s->month;
             tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
-            if (check_month(ses_tmp->start) || (ses_tmp->range && check_month(ses_tmp->end))) {
-                pr_err("Illegal month(start %d end %d step %d)\n", ses_tmp->start, ses_tmp->end, ses_tmp->step);
-                return -1;
-            }
             break;
         case 4:
-            ses_tmp = &crn_s.day_of_week;
+            ses_tmp = &crn_s->day_of_week;
             tmp = parse_ses(&pos, ses_tmp);
             if (tmp)
                 return tmp;
-            if (check_day_of_week(ses_tmp->start) || ses_tmp->range && check_day_of_week(ses_tmp->end)) {
-                pr_err("Illegal day of week(start %d end %d step %d)\n", ses_tmp->start, ses_tmp->end, ses_tmp->step);
-                return -1;
-            }
             break;
         default:
             break;
         }
-        pr_debug("(ses) start %d end %d step %d range %d\n\n", ses_tmp->start, ses_tmp->end, ses_tmp->step, ses_tmp->range);
+        ses__get_ranges(ses_tmp, ranges);
+        pr_debug("(Ses) ranges: %s step: %d\n\n", ranges[0] == 0 ? "All" : ranges, ses_tmp->step);
     }
 
     // TODO: replace with memchr
@@ -678,13 +672,10 @@ static int parse(const char *vbuf)
           *pos == ' '; ++pos) {}
 
     /* copy the rest of the string to comm_args */
-    if (strncpy(comm_args, pos, min(vbuf_siz, sizeof(comm_args))) == 0) {
+    if (strncpy(comm_args, pos, min(vbuf_siz, comm_args_len)) == 0) {
         pr_err("Empty command\n");
         return -1;
     }
-    pr_debug("comm_args: %s\n", comm_args);
-
-    cron__sched(&crn_s, comm_args);
 
     if (cnt < CRON_NUM) {
         pr_err("Only has %d numbers, needs to be %d\n", cnt, CRON_NUM);
@@ -693,13 +684,45 @@ static int parse(const char *vbuf)
     return 0;
 }
 
-static int start()
+static int start(int argc, char **argv)
 {
     int err = 0;
     FILE *f;
     char *vbuf;
+    cron_set crn_s;
+    char comm_args[COMM_LEN];
+    char cron_tab_file[PATH_MAX];
+    int opt;
+    int tmp;
 
-    f = fopen("crontab.txt", "r");
+    memset(cron_tab_file, 0, PATH_MAX);
+    tmp = snprintf(cron_tab_file, sizeof(cron_tab_file) - 1, DEFAULT_CRONTAB_FMT, getenv(HOME));
+    cron_tab_file[tmp] = 0;
+    // parsing arguments to get the file name
+    while ((opt = getopt(argc, argv, "hf:")) != -1) {
+        int len;
+
+        switch (opt) {
+        case 'f':
+            len = min(strlen(optarg), sizeof(cron_tab_file) - 1);
+            strncpy(cron_tab_file, optarg, len);
+            cron_tab_file[len] = 0;
+            break;
+        case 'h':
+            printf(
+                "\n  Cron by Howard Chu\n"
+                "\n    -h: Print this message"
+                "\n    -f <crontab file>: Path of the crontab file (default: ~/.crontab.txt)"
+                "\n\n"
+            );
+            return 0;
+            break;
+        default:
+            break;
+        }
+    }
+    pr_debug("Cron tab file location: %s\n", cron_tab_file);
+    f = fopen(cron_tab_file, "r");
     if (!f) {
         perror("Failed to open the crontab file");
         err = -1;
@@ -717,7 +740,10 @@ static int start()
         goto out_free;
     }
 
-    err = parse(vbuf);
+    memset(&crn_s, 0, sizeof(crn_s));
+    memset(comm_args, 0, sizeof(comm_args));
+    err = parse(vbuf, &crn_s, comm_args, sizeof(comm_args));
+    cron__sched(&crn_s, comm_args);
 
 out_free:
     vec__free(vbuf);
@@ -730,7 +756,7 @@ out:
     return err;
 }
 
-int main()
+int main(int argc, char **argv)
 {
-    return start();
+    return start(argc, argv);
 }
