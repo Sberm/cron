@@ -12,10 +12,22 @@
 
 #define CRON_NUM 5
 #define NUM_LEN 32
-#define MAX_ARG 16
-#define ARG_LEN 32
-#define COMM_LEN 256
+#define MAX_ARG 128
+#define ARG_LEN 256
+#define COMM_LEN 1024
 #define ONE_SEC 1
+#define MAX_SCHED 61
+
+#define MIN_MINUTE 0
+#define MAX_MINUTE 59
+#define MIN_HOUR 0
+#define MAX_HOUR 23
+#define MIN_DAY_OF_MONTH 1
+#define MAX_DAY_OF_MONTH 31
+#define MIN_MONTH 1
+#define MAX_MONTH 12
+#define MIN_DAY_OF_WEEK 1
+#define MAX_DAY_OF_WEEK 7
 
 /* stands for start, end, step */
 typedef struct ses {
@@ -23,7 +35,7 @@ typedef struct ses {
     int end;
     int step;
     int range;
-    char sched[61]; /* TODO: translate range to sched map */
+    char sched[MAX_SCHED]; /* TODO: translate range to sched map */
 } ses;
 
 typedef struct cron_set {
@@ -59,52 +71,57 @@ static int get_next_tok(char **pos, char *tok, int tok_size)
 
 static int check_minute(int num)
 {
-    if (num < -1 || num > 59) {
-        pr_err("Bad minute(%d)\n", num);
-        return -1;
+    if ((num >= MIN_MINUTE && num <= MAX_MINUTE) ||
+         num == -1) {
+        pr_debug("Minute %d\n", num);
+        return 0;
     }
-    pr_debug("Minute %d\n", num);
-    return 0;
+    pr_err("Bad minute(%d)\n", num);
+    return -1;
 }
 
 static int check_hour(int num)
 {
-    if (num < -1 || num > 23) {
-        pr_err("Bad hour(%d)\n", num);
-        return -1;
+    if ((num >= MIN_HOUR && num <= MAX_HOUR) ||
+         num == -1) {
+        pr_debug("Hour %d\n", num);
+        return 0;
     }
-    pr_debug("Hour %d\n", num);
-    return 0;
+    pr_err("Bad hour(%d)\n", num);
+    return -1;
 }
 
 static int check_day_of_month(int num)
 {
-    if (num < -1 || num == 0 || num > 31) {
-        pr_err("Bad day of month(%d)\n", num);
-        return -1;
+    if ((num >= MIN_DAY_OF_MONTH && num <= MAX_DAY_OF_MONTH) ||
+         num == -1) {
+        pr_debug("Day of month %d\n", num);
+        return 0;
     }
-    pr_debug("Day of month %d\n", num);
-    return 0;
+    pr_err("Bad day of month(%d)\n", num);
+    return -1;
 }
 
 static int check_month(int num)
 {
-    if (num < -1 || num == 0 || num > 12) {
-        pr_err("Bad month(%d)\n", num);
-        return -1;
+    if ((num >= MIN_MONTH && num <= MAX_MONTH) ||
+         num == -1) {
+        pr_debug("Month %d\n", num);
+        return 0;
     }
-    pr_debug("Month %d\n", num);
-    return 0;
+    pr_err("Bad month(%d)\n", num);
+    return -1;
 }
 
 static int check_day_of_week(int num)
 {
-    if (num < -1 || num == 0 || num > 12) {
-        pr_err("Bad day of week(%d)\n", num);
-        return -1;
+    if ((num >= MIN_DAY_OF_WEEK && num <= MAX_DAY_OF_WEEK) ||
+         num == -1) {
+        pr_debug("Day of week %d\n", num);
+        return 0;
     }
-    pr_debug("Day of week %d\n", num);
-    return 0;
+    pr_err("Bad day of week(%d)\n", num);
+    return -1;
 }
 
 static int cron__check(cron_set *crn_s)
@@ -257,6 +274,10 @@ static int get_next_arg(char **pos, char *arg, int arg_size)
     if (**pos == '"') {
         sep = '"';
         ++*pos;
+    } else if (**pos == '\'') {
+        pr_debug("debug");
+        sep = '\'';
+        ++*pos;
     } else {
         sep = ' ';
     }
@@ -269,11 +290,15 @@ static int get_next_arg(char **pos, char *arg, int arg_size)
             ++end;
         if (sep == '"' && !*end) /* hits the end without the matching " */
             return -1;
+        if (sep == '\'' && !*end)
+            return -1;
 
         siz = min(end - *pos, arg_size - 1);
         strncpy(arg, *pos, siz);
         arg[siz] = '\0';
         if (sep == '"')
+            *pos = end + 1;
+        else if (sep == '\'')
             *pos = end + 1;
         else
             *pos = end;
@@ -353,6 +378,13 @@ static int cron__sched(cron_set *crn_s, char *comm_args)
     return 0;
 }
 
+static char zero[] = "0";
+static int is_legal(int tmp, char *pos, size_t n) {
+    // char buf[256]; strncpy(buf, pos, n);
+    // pr_debug("tmp: %d buf: %s strncmp: %d\n", tmp, buf, strncmp(pos, zero, min(sizeof(zero), n)));
+    return !(tmp == 0 && strncmp(pos, zero, min(sizeof(zero), n)));
+}
+
 static int parse_ses(char **pos, ses *ses);
 
 static int parse_num_lhs(char **pos, ses *ses)
@@ -362,11 +394,11 @@ static int parse_num_lhs(char **pos, ses *ses)
     // consumes the number
     for(end = *pos; isdigit(*end) && *end; ++end) {}
     int tmp = atoin(*pos, end - *pos);
-    *pos = end;
-    if (!tmp) {
+    if (!is_legal(tmp, *pos, end - *pos)) {
         pr_err("Can't be converted to integer\n");
         return -1;
     }
+    *pos = end;
     ses->start = tmp;
     if (**pos == '-') {
         ++*pos;
@@ -376,11 +408,11 @@ static int parse_num_lhs(char **pos, ses *ses)
 
             for(end = *pos; isdigit(*end) && *end; ++end) {}
             tmp = atoin(*pos, end - *pos);
-            *pos = end;
-            if (!tmp) {
+            if (!is_legal(tmp, *pos, end - *pos)) {
                 pr_err("Can't be converted to integer\n");
                 return -1;
             }
+            *pos = end;
             ses->end = tmp;
             if (**pos == '/') {
                 ++*pos;
@@ -388,11 +420,11 @@ static int parse_num_lhs(char **pos, ses *ses)
                     char *end = NULL;
                     for(end = *pos; isdigit(*end) && *end; ++end) {}
                     tmp = atoin(*pos, end - *pos);
-                    *pos = end;
-                    if (!tmp) {
+                    if (!is_legal(tmp, *pos, end - *pos)) {
                         pr_err("Can't be converted to integer\n");
                         return -1;
                     }
+                    *pos = end;
                     ses->step = tmp;
                     return 0;
                 } else {
@@ -419,11 +451,11 @@ static int parse_num_lhs(char **pos, ses *ses)
                     char *end = NULL;
                     for(end = *pos; isdigit(*end) && *end; ++end) {}
                     tmp = atoin(*pos, end - *pos);
-                    *pos = end;
-                    if (!tmp) {
+                    if (!is_legal(tmp, *pos, end - *pos)) {
                         pr_err("Can't be converted to integer\n");
                         return -1;
                     }
+                    *pos = end;
                     ses->step = tmp;
                     return 0;
                 } else {
@@ -463,11 +495,11 @@ static int parse_asterisk_lhs(char **pos, ses *ses)
             char *end = NULL;
             for(end = *pos; isdigit(*end) && *end; ++end) {}
             int tmp = atoin(*pos, end - *pos);
-            *pos = end;
-            if (!tmp) {
+            if (!is_legal(tmp, *pos, end - *pos)) {
                 pr_err("Can't be converted to integer\n");
                 return -1;
             }
+            *pos = end;
             ses->end = tmp;
             if (**pos == '/') {
                 ++*pos;
@@ -475,11 +507,11 @@ static int parse_asterisk_lhs(char **pos, ses *ses)
                     char *end = NULL;
                     for(end = *pos; isdigit(*end) && *end; ++end) {}
                     int tmp = atoin(*pos, end - *pos);
-                    *pos = end;
-                    if (!tmp) {
+                    if (!is_legal(tmp, *pos, end - *pos)) {
                         pr_err("Can't be converted to integer\n");
                         return -1;
                     }
+                    *pos = end;
                     ses->step = tmp;
                 } else {
                     pr_err("\'/\' should be followed with a number\n");
@@ -570,6 +602,7 @@ static int parse(const char *vbuf)
     int cnt = 0;
     char comm_args[COMM_LEN];
     cron_set crn_s;
+    size_t vbuf_siz;
 
     memset(&crn_s, 0, sizeof(crn_s));
     memset(tok, 0, sizeof(tok));
@@ -640,11 +673,12 @@ static int parse(const char *vbuf)
 
     // TODO: replace with memchr
     // go to the first non-space
-    for (;pos < (char *)__vec__at(vbuf, 0) + vec__len(vbuf) * vec__mem_size(vbuf) &&
+    vbuf_siz = vec__len(vbuf) * vec__mem_size(vbuf);
+    for (;pos < (char *)__vec__at(vbuf, 0) + vbuf_siz &&
           *pos == ' '; ++pos) {}
 
     /* copy the rest of the string to comm_args */
-    if (strncpy(comm_args, pos, min(vec__len(vbuf) * vec__mem_size(vbuf), sizeof(comm_args))) == 0) {
+    if (strncpy(comm_args, pos, min(vbuf_siz, sizeof(comm_args))) == 0) {
         pr_err("Empty command\n");
         return -1;
     }
