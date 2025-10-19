@@ -702,6 +702,16 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
     return 0;
 }
 
+static void print_help()
+{
+    printf(
+        "\n  Cron by Howard Chu\n"
+        "\n    -h: Print this message"
+        "\n    -f <crontab file>: Path of the crontab file (default: ~/.crontab.txt)"
+        "\n\n"
+    );
+}
+
 static int start(int argc, char **argv)
 {
     int err = 0;
@@ -727,15 +737,13 @@ static int start(int argc, char **argv)
             cron_tab_file[len] = 0;
             break;
         case 'h':
-            printf(
-                "\n  Cron by Howard Chu\n"
-                "\n    -h: Print this message"
-                "\n    -f <crontab file>: Path of the crontab file (default: ~/.crontab.txt)"
-                "\n\n"
-            );
+            print_help();
             return 0;
             break;
         default:
+            printf("Option not found\n");
+            print_help();
+            return -1;
             break;
         }
     }
