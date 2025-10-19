@@ -1,3 +1,4 @@
+10/2 * * * *  osascript -e 'open location "https://youtu.be/DbTlX9Q39Ok?t=11246"'
 47 15 * * *  osascript -e 'open location "https://youtu.be/DbTlX9Q39Ok?t=11246"'
 
 40 * * * * osascript -e 'display dialog "😊" with title "A Happy Face"'

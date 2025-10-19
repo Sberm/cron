@@ -166,6 +166,26 @@ static int cron__should_exec(cron_set *crn_s)
     mon = info->tm_mon + 1;
     wday = info->tm_wday + 1;
 
+    if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
+        !crn_s->month.sched[mon])
+        return 0;
+
+    if (check_bound(MIN_DAY_OF_WEEK, MAX_DAY_OF_WEEK, wday) &&
+        !crn_s->day_of_week.sched[wday])
+        return 0;
+
+    if (check_bound(MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH, mday) &&
+        !crn_s->day_of_month.sched[mday])
+        return 0;
+
+    if (check_bound(MIN_HOUR, MAX_HOUR, hour) &&
+        !crn_s->hour.sched[hour])
+        return 0;
+
+    if (check_bound(MIN_MINUTE, MAX_MINUTE, min) &&
+        !crn_s->minute.sched[min])
+        return 0;
+
     if (prev_min != -1 &&
         (min < prev_min + (crn_s->minute.step ? crn_s->minute.step : 1) ||
          hour < prev_hour + crn_s->hour.step ||
@@ -197,9 +217,8 @@ static int cron__should_exec(cron_set *crn_s)
         exec = 0;
 
     if (check_bound(MIN_MINUTE, MAX_MINUTE, min) &&
-        !crn_s->minute.sched[min]) {
+        !crn_s->minute.sched[min])
         exec = 0;
-    }
 
     return exec;
 }
@@ -360,6 +379,28 @@ static void ses__write_sched(Ses *ses, const int _start, const int _end)
 
 static int parse_ses(char **pos, Ses *ses);
 
+static int parse_step(char **pos, Ses *ses)
+{
+    int tmp;
+
+    ++*pos;
+    if (isdigit(**pos)) { // step
+        char *end = NULL;
+        for(end = *pos; isdigit(*end) && *end; ++end) {}
+        tmp = atoin(*pos, end - *pos);
+        if (!is_legal(tmp, *pos, end - *pos)) {
+            pr_err("Can't be converted to integer\n");
+            return -1;
+        }
+        *pos = end;
+        ses->step = tmp;
+    } else {
+        pr_err("\'/\' should be followed with a number\n");
+        return -1;
+    }
+    return 0;
+}
+
 static int parse_num_lhs(char **pos, Ses *ses)
 {
     char *end = NULL;
@@ -390,22 +431,9 @@ static int parse_num_lhs(char **pos, Ses *ses)
             *pos = end;
             ses->end = tmp;
             if (**pos == '/') {
-                ++*pos;
-                if (isdigit(**pos)) { // step
-                    char *end = NULL;
-                    for(end = *pos; isdigit(*end) && *end; ++end) {}
-                    tmp = atoin(*pos, end - *pos);
-                    if (!is_legal(tmp, *pos, end - *pos)) {
-                        pr_err("Can't be converted to integer\n");
-                        return -1;
-                    }
-                    *pos = end;
-                    ses->step = tmp;
-                    return 0;
-                } else {
-                    pr_err("\'/\' should be followed with a number\n");
+                ses__write_sched(ses, ses->start, ses->end);
+                if (parse_step(pos, ses))
                     return -1;
-                }
             } else if (**pos == ',') {
                 ses__write_sched(ses, ses->start, ses->end);
                 ++*pos;
@@ -423,22 +451,9 @@ static int parse_num_lhs(char **pos, Ses *ses)
             ++*pos;
             ses->end = -1;
             if (**pos == '/') {
-                ++*pos;
-                if (isdigit(**pos)) { // step
-                    char *end = NULL;
-                    for(end = *pos; isdigit(*end) && *end; ++end) {}
-                    tmp = atoin(*pos, end - *pos);
-                    if (!is_legal(tmp, *pos, end - *pos)) {
-                        pr_err("Can't be converted to integer\n");
-                        return -1;
-                    }
-                    *pos = end;
-                    ses->step = tmp;
-                    return 0;
-                } else {
-                    pr_err("\'/\' should be followed with a number\n");
+                ses__write_sched(ses, ses->start, ses->end);
+                if (parse_step(pos, ses))
                     return -1;
-                }
             } else if (!**pos) {
                 // TODO: this is supposed to be legal, right?
                 return -1;
@@ -460,6 +475,10 @@ static int parse_num_lhs(char **pos, Ses *ses)
         ses__write_sched(ses, ses->start, ses->start);
         ++*pos;
         parse_ses(pos, ses);
+    } else if (**pos == '/') {
+        ses__write_sched(ses, ses->start, -1);
+        if (parse_step(pos, ses))
+            return -1;
     } else {
         pr_err("Illegal character(%c)\n", **pos);
         pr_debug("il cha 4\n");
@@ -489,21 +508,9 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
             *pos = end;
             ses->end = tmp;
             if (**pos == '/') {
-                ++*pos;
-                if (isdigit(**pos)) {
-                    char *end = NULL;
-                    for(end = *pos; isdigit(*end) && *end; ++end) {}
-                    int tmp = atoin(*pos, end - *pos);
-                    if (!is_legal(tmp, *pos, end - *pos)) {
-                        pr_err("Can't be converted to integer\n");
-                        return -1;
-                    }
-                    *pos = end;
-                    ses->step = tmp;
-                } else {
-                    pr_err("\'/\' should be followed with a number\n");
+                ses__write_sched(ses, ses->start, ses->start);
+                if (parse_step(pos, ses))
                     return -1;
-                }
             } else if (**pos == ',') {
                 ses__write_sched(ses, ses->start, ses->start);
                 ++*pos;
@@ -525,6 +532,10 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
         // single asterisk, it's gonna be -1 -1
         ses__write_sched(ses, ses->start, ses->start);
         return 0;
+    }  else if (**pos == '/') {
+        ses__write_sched(ses, ses->start, ses->start);
+        if (parse_step(pos, ses))
+            return -1;
     } else {
         pr_err("Illegal character(%c)\n", **pos);
         pr_debug("il cha 6\n");
@@ -545,7 +556,7 @@ static int parse_ses(char **pos, Ses *ses)
     $root:
         (num | *)
         $num:
-            (end | - | ,)
+            (end | - | , | /)
             $-:
                 (num | *)
                 $num:
@@ -558,8 +569,12 @@ static int parse_ses(char **pos, Ses *ses)
                         (root)
             $,:
                 (root)
+            $/:  // this is broken and different from the definition
+                (step)
+                $step:
+                    (end)
         $*:
-            (, | - | end)
+            (, | - | end | /)
             $,:
                 (root)
             $-:
@@ -571,7 +586,10 @@ static int parse_ses(char **pos, Ses *ses)
                         $step: end
                     $,:
                         (root)
-
+            $/:
+                (step)
+                $step:
+                    (end)
     */
 
     if (isdigit(**pos)) {
