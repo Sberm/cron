@@ -636,6 +636,7 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
     int cnt = 0;
     size_t vbuf_siz;
     char ranges[256];
+    static const char *time_types[] = { "minute", "hour", "day_of_month", "month", "day_of_week" };
 
     memset(tok, 0, sizeof(tok));
 
@@ -683,7 +684,10 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
             break;
         }
         ses__get_ranges(ses_tmp, ranges);
-        pr_debug("(Ses) ranges: %s step: %d\n\n", ranges[0] == 0 ? "All" : ranges, ses_tmp->step);
+        ses_tmp->count = -1; /* dummy value to make step work */
+        pr_debug("%-16s ranges: %s step: %d\n", time_types[idx],
+                                                ranges[0] == 0 ? "All" : ranges,
+                                                ses_tmp->step);
     }
 
     // TODO: replace with memchr
