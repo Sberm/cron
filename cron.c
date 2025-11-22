@@ -149,9 +149,9 @@ static int cron__should_exec(cron_set *crn_s)
     int exec = 1;
     static int prev_min = -1;
     static int prev_hour = -1;
-    static int prev_day_of_month = -1;
-    static int prev_month = -1;
-    static int prev_day_of_week = -1;
+    static int prev_mday = -1;
+    static int prev_mon = -1;
+    static int prev_wday = -1;
     int min;
     int hour;
     int mday;
@@ -161,6 +161,24 @@ static int cron__should_exec(cron_set *crn_s)
     if (!crn_s)
         return 0;
 
+    pr_debug("\nchecking if exec\n");
+#ifdef DEBUG
+    static int debug_timer_init = 1;
+    static time_t debug_timer;
+    if (debug_timer_init) {
+        debug_timer_init = 0;
+        time(&debug_timer);
+    } else {
+        debug_timer += 60; /* force addition */
+    }
+    info = localtime(&debug_timer);
+    min = info->tm_min;
+    hour = info->tm_hour;
+    mday = info->tm_mday;
+    mon = info->tm_mon + 1;
+    wday = info->tm_wday + 1;
+    pr_debug("%d:%d %d/%d wday: %d\n", hour, min, mon, mday, wday);
+#else
     time(&raw_time);
     info = localtime(&raw_time);
 
@@ -169,6 +187,14 @@ static int cron__should_exec(cron_set *crn_s)
     mday = info->tm_mday;
     mon = info->tm_mon + 1;
     wday = info->tm_wday + 1;
+#endif /* DEBUG */
+
+    if (prev_min == -1) {
+        prev_min = min;
+        prev_hour = hour;
+        prev_mon = mon;
+        prev_wday = wday;
+    }
 
     if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
         !crn_s->month.sched[mon])
@@ -193,16 +219,16 @@ static int cron__should_exec(cron_set *crn_s)
     if (prev_min != -1 &&
         (min < prev_min + (crn_s->minute.step ? crn_s->minute.step : 1) ||
          hour < prev_hour + crn_s->hour.step ||
-         mday < prev_day_of_month + crn_s->day_of_month.step ||
-         mon < prev_month + crn_s->month.step ||
-         wday < prev_day_of_week + crn_s->day_of_week.step ))
+         mday < prev_mday + crn_s->day_of_month.step ||
+         mon < prev_mon + crn_s->month.step ||
+         wday < prev_wday + crn_s->day_of_week.step ))
         return 0;
 
     prev_min = min;
     prev_hour = hour;
-    prev_day_of_month = mday;
-    prev_month = mon;
-    prev_day_of_week = wday;
+    prev_mday = mday;
+    prev_mon = mon;
+    prev_wday = wday;
 
     if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
         !crn_s->month.sched[mon])
@@ -361,7 +387,12 @@ static int cron__sched(cron_set *crn_s, char *comm_args)
     while (1) {
         if (cron__should_exec(crn_s))
             exec(comm_args);
+#ifdef DEBUG
+#define DEBUG_US 200 * 1000
+        usleep(DEBUG_US);
+#else
         sleep(ONE_SEC);
+#endif
     }
     return 0;
 }
@@ -684,7 +715,6 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
             break;
         }
         ses__get_ranges(ses_tmp, ranges);
-        ses_tmp->count = -1; /* dummy value to make step work */
         pr_debug("%-16s ranges: %s step: %d\n", time_types[idx],
                                                 ranges[0] == 0 ? "All" : ranges,
                                                 ses_tmp->step);
