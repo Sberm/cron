@@ -154,29 +154,37 @@ int ses__is_interval_start(Ses *ses, const int time_val, const int max_idx)
     return 0;
 }
 
-int ses__check_step(Ses *ses, int *prev_val, const int cur_val, const int max_idx)
+int ses__check_step(Ses *ses, int *prev_val, const int cur_val, const int max_idx, char *ses_type)
 {
-    if (!ses || !prev_val)
+    if (!ses || !prev_val || !ses_type)
         return 0;
-    /*
-     * count initially will be -1.
-     * Also check if this is the start of an interval before execution
-     */
-    if (ses->count == -1 || ses__is_interval_start(ses, cur_val, max_idx)) {
-        /* this forces execution when starting the app, as well as circling back again */
+
+    if (ses->count == -1) {
+        /* this forces execution when starting the app */
+        pr_debug("(%s) Reset count (initially -1)\n", ses_type);
         ses->count = ses->step;
+        return 1;
     }
+    if (ses__is_interval_start(ses, cur_val, max_idx)) {
+        /* this forces execution when it reaches the start of an interval */
+        pr_debug("(%s) Reset count (reaches interval start)\n", ses_type);
+        ses->count = ses->step;
+        return 1;
+    }
+
     if (*prev_val != cur_val) {
         /* goes just out-of-bound, reset the count */
         if (ses->count == ses->step)
             ses->count = 0;
+
         ++ses->count;
+        pr_debug("(%s) count %d\n", ses_type, ses->count);
         *prev_val = cur_val;
     }
-    if (ses->count != ses->step)
-        return 0;
-    /* if count is equal to step, should exec */
-    return 1;
+
+    if (ses->count == ses->step)
+        return 1;
+    return 0;
 }
 
 static int cron__should_exec(cron_set *crn_s)
@@ -185,38 +193,44 @@ static int cron__should_exec(cron_set *crn_s)
     time_t raw_time;
     struct tm *info;
     int exec = 1;
-    static int prev_min = -1;
-    static int prev_hour = -1;
-    static int prev_mday = -1;
-    static int prev_mon = -1;
-    static int prev_wday = -1;
+    /* time of the previous check */
+    static int prev_check_min = -1;
+    static int prev_check_hour = -1;
+    static int prev_check_mday = -1;
+    static int prev_check_mon = -1;
+    static int prev_check_wday = -1;
+    /* time of the previous step */
+    static int prev_step_min = -1;
+    static int prev_step_hour = -1;
+    static int prev_step_mday = -1;
+    static int prev_step_mon = -1;
+    static int prev_step_wday = -1;
     int min;
     int hour;
     int mday;
     int mon;
     int wday;
-    int step_should_exec = 1; /* default: no step */
 
     if (!crn_s)
         return 0;
 
-    pr_debug("\nchecking if exec\n");
 #ifdef DEBUG
     static int debug_timer_init = 1;
     static time_t debug_timer;
+
     if (debug_timer_init) {
         debug_timer_init = 0;
         time(&debug_timer);
     } else {
-        debug_timer += 60; /* force addition */
+        debug_timer += 30; /* force addition */
     }
+
     info = localtime(&debug_timer);
     min = info->tm_min;
     hour = info->tm_hour;
     mday = info->tm_mday;
     mon = info->tm_mon + 1;
     wday = info->tm_wday + 1;
-    pr_debug("%d:%d %d/%d wday: %d\n", hour, min, mon, mday, wday);
 #else
     time(&raw_time);
     info = localtime(&raw_time);
@@ -228,12 +242,18 @@ static int cron__should_exec(cron_set *crn_s)
     wday = info->tm_wday + 1;
 #endif /* DEBUG */
 
-    if (prev_min == -1) {
-        prev_min = min;
-        prev_hour = hour;
-        prev_mon = mon;
-        prev_wday = wday;
-    }
+    /* we already checked this */
+    if (min == prev_check_min && hour == prev_check_hour && mday == prev_check_mday &&
+        mon == prev_check_mon && wday == prev_check_wday)
+        return 0;
+
+    prev_check_min = min;
+    prev_check_mday = mday;
+    prev_check_hour = hour;
+    prev_check_mon = mon;
+    prev_check_wday = wday;
+
+    pr_debug("\n%d:%d %d/%d wday: %d\n", hour, min, mon, mday, wday);
 
     if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
         !crn_s->month.sched[mon])
@@ -254,43 +274,42 @@ static int cron__should_exec(cron_set *crn_s)
     if (check_bound(MIN_MINUTE, MAX_MINUTE, min) &&
         !crn_s->minute.sched[min])
         return 0;
+
+    pr_debug("Valid timestamp\n");
 
     if (crn_s->minute.step)
-        step_should_exec &= ses__check_step(&crn_s->minute, &prev_min, min, MAX_MINUTE);
+        exec &= ses__check_step(&crn_s->minute, &prev_step_min, min, MAX_MINUTE, "minute");
     if (crn_s->hour.step)
-        step_should_exec &= ses__check_step(&crn_s->hour, &prev_hour, hour, MAX_HOUR);
+        exec &= ses__check_step(&crn_s->hour, &prev_step_hour, hour, MAX_HOUR, "hour");
     if (crn_s->day_of_month.step)
-        step_should_exec &= ses__check_step(&crn_s->day_of_month, &prev_mday, mday, MAX_DAY_OF_MONTH);
+        exec &= ses__check_step(&crn_s->day_of_month, &prev_step_mday, mday, MAX_DAY_OF_MONTH, "day of month");
     if (crn_s->month.step)
-        step_should_exec &= ses__check_step(&crn_s->month, &prev_mon, mon, MAX_MONTH);
+        exec &= ses__check_step(&crn_s->month, &prev_step_mon, mon, MAX_MONTH, "month");
     if (crn_s->day_of_week.step)
-        step_should_exec &= ses__check_step(&crn_s->day_of_week, &prev_wday, wday, MAX_DAY_OF_WEEK);
+        exec &= ses__check_step(&crn_s->day_of_week, &prev_step_wday, wday, MAX_DAY_OF_WEEK, "day of week");
 
-    if (!step_should_exec) {
+    if (!exec)
         pr_debug("Step conditions not met, no exec\n");
-        return 0;
-    }
 
     if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
         !crn_s->month.sched[mon])
-        exec = 0;
+        exec &= 0;
 
     if (check_bound(MIN_DAY_OF_WEEK, MAX_DAY_OF_WEEK, wday) &&
         !crn_s->day_of_week.sched[wday])
-        exec = 0;
+        exec &= 0;
 
     if (check_bound(MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH, mday) &&
         !crn_s->day_of_month.sched[mday])
-        exec = 0;
+        exec &= 0;
 
     if (check_bound(MIN_HOUR, MAX_HOUR, hour) &&
         !crn_s->hour.sched[hour])
-        exec = 0;
+        exec &= 0;
 
     if (check_bound(MIN_MINUTE, MAX_MINUTE, min) &&
         !crn_s->minute.sched[min])
-        exec = 0;
-
+        exec &= 0;
     return exec;
 }
 
