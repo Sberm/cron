@@ -305,35 +305,34 @@ static void exec(char *comm_args)
     char comm_strip[COMM_LEN] = { 0 };
     char *pos = comm_args;
 
-    for (int i = 0; i < MAX_ARG; ++i) {
-        args[i] = malloc(ARG_LEN);
-        if (args[i] == NULL) {
-            pr_err("Failed to allocate args vector\n");
-            goto out_free;
-        }
-        memset(args[i], 0, ARG_LEN);
-    }
-
-    while(idx < MAX_ARG && !get_next_arg(&pos, arg, sizeof(arg))) {
-        if (idx == 0) // command
-            strncpy(comm_strip, arg, ARG_LEN);
-        strncpy(args[idx], arg, ARG_LEN);
-        pr_debug("arg[%d] = %s\n", idx, arg);
-        memset(arg, 0, ARG_LEN);
-        ++idx;
-    }
-
-    if (idx < MAX_ARG)
-        args[idx] = NULL;
-    else
-        args[MAX_ARG - 1] = NULL;
-
     pid = fork();
     if (pid == -1) {
         pr_err("Failed to fork\n");
-        goto out_free;
         return;
     } else if (pid == 0) {
+        for (int i = 0; i < MAX_ARG; ++i) {
+            args[i] = malloc(ARG_LEN);
+            if (args[i] == NULL) {
+                pr_err("Failed to allocate args vector\n");
+                goto out_free;
+            }
+            memset(args[i], 0, ARG_LEN);
+        }
+
+        while(idx < MAX_ARG && !get_next_arg(&pos, arg, sizeof(arg))) {
+            if (idx == 0) // command
+                strncpy(comm_strip, arg, ARG_LEN);
+            strncpy(args[idx], arg, ARG_LEN);
+            pr_debug("arg[%d] = %s\n", idx, arg);
+            memset(arg, 0, ARG_LEN);
+            ++idx;
+        }
+
+        if (idx < MAX_ARG)
+            args[idx] = NULL;
+        else
+            args[MAX_ARG - 1] = NULL;
+
         pr_debug("Command: %s\n", comm_strip);
         pr_debug("Arguments: [");
         for (int i = 0; i < idx; ++i) {
@@ -345,13 +344,13 @@ static void exec(char *comm_args)
         pr_debug("]\n");
         execvp(comm_strip, args);
         perror("execvp");
-        goto out_free;
-    }
 out_free:
-    for (int i = 0; i < MAX_ARG; ++i)
-        free(args[i]);
-out:
-    return;
+        for (int i = 0; i < MAX_ARG; ++i)
+            free(args[i]);
+        exit(-1);
+    } else {
+        waitpid(pid, NULL, 0);
+    }
 }
 
 static int cron__sched(cron_set *crn_s, char *comm_args)
