@@ -163,12 +163,14 @@ int ses__check_step(Ses *ses, int *prev_val, const int cur_val, const int max_id
         /* this forces execution when starting the app */
         pr_debug("(%s) Reset count (initially -1)\n", ses_type);
         ses->count = ses->step;
+        *prev_val = cur_val;
         return 1;
     }
     if (ses__is_interval_start(ses, cur_val, max_idx)) {
         /* this forces execution when it reaches the start of an interval */
         pr_debug("(%s) Reset count (reaches interval start)\n", ses_type);
         ses->count = ses->step;
+        *prev_val = cur_val;
         return 1;
     }
 
@@ -178,10 +180,10 @@ int ses__check_step(Ses *ses, int *prev_val, const int cur_val, const int max_id
             ses->count = 0;
 
         ++ses->count;
-        pr_debug("(%s) count %d\n", ses_type, ses->count);
         *prev_val = cur_val;
     }
 
+    pr_debug("(%s) count %d\n", ses_type, ses->count);
     if (ses->count == ses->step)
         return 1;
     return 0;
