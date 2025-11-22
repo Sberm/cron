@@ -5,6 +5,10 @@
 #include <unistd.h>
 #include <time.h>
 
+#if defined(__APPLE__) || defined(__MACH__)
+#include <limits.h> /* PATH_MAX */
+#endif
+
 #include "util.h"
 #include "file.h"
 #include "vec.h"
