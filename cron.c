@@ -38,13 +38,14 @@
 
 /* stands for start, end, step */
 typedef struct Ses {
-    /* 
+    /*
      * start and end act as temporary variables for parsing,
      * do not represent the real start and end
      */
     int start;
     int end;
     int step;
+    int count;
     char sched[MAX_SCHED];
 } Ses;
 
@@ -141,6 +142,43 @@ int check_bound(const int mn, const int mx, const int val)
     return 0;
 }
 
+int ses__is_interval_start(Ses *ses, const int time_val, const int max_idx)
+{
+    /* there's no interval start for wildcard */
+    if (ses->start == -1 && ses->end == -1)
+        return 0;
+    int prev_index = time_val ? time_val - 1 : max_idx;
+    /* the second check is not necessary, but makes it easier to understand */
+    if (ses->sched[prev_index] == 0 && ses->sched[time_val] == 1)
+        return 1;
+    return 0;
+}
+
+int ses__check_step(Ses *ses, int *prev_val, const int cur_val, const int max_idx)
+{
+    if (!ses || !prev_val)
+        return 0;
+    /*
+     * count initially will be -1.
+     * Also check if this is the start of an interval before execution
+     */
+    if (ses->count == -1 || ses__is_interval_start(ses, cur_val, max_idx)) {
+        /* this forces execution when starting the app, as well as circling back again */
+        ses->count = ses->step;
+    }
+    if (*prev_val != cur_val) {
+        /* goes just out-of-bound, reset the count */
+        if (ses->count == ses->step)
+            ses->count = 0;
+        ++ses->count;
+        *prev_val = cur_val;
+    }
+    if (ses->count != ses->step)
+        return 0;
+    /* if count is equal to step, should exec */
+    return 1;
+}
+
 static int cron__should_exec(cron_set *crn_s)
 {
     /* minute, hour, day of month, month, day of week */
@@ -157,6 +195,7 @@ static int cron__should_exec(cron_set *crn_s)
     int mday;
     int mon;
     int wday;
+    int step_should_exec = 1; /* default: no step */
 
     if (!crn_s)
         return 0;
@@ -216,19 +255,21 @@ static int cron__should_exec(cron_set *crn_s)
         !crn_s->minute.sched[min])
         return 0;
 
-    if (prev_min != -1 &&
-        (min < prev_min + (crn_s->minute.step ? crn_s->minute.step : 1) ||
-         hour < prev_hour + crn_s->hour.step ||
-         mday < prev_mday + crn_s->day_of_month.step ||
-         mon < prev_mon + crn_s->month.step ||
-         wday < prev_wday + crn_s->day_of_week.step ))
-        return 0;
+    if (crn_s->minute.step)
+        step_should_exec &= ses__check_step(&crn_s->minute, &prev_min, min, MAX_MINUTE);
+    if (crn_s->hour.step)
+        step_should_exec &= ses__check_step(&crn_s->hour, &prev_hour, hour, MAX_HOUR);
+    if (crn_s->day_of_month.step)
+        step_should_exec &= ses__check_step(&crn_s->day_of_month, &prev_mday, mday, MAX_DAY_OF_MONTH);
+    if (crn_s->month.step)
+        step_should_exec &= ses__check_step(&crn_s->month, &prev_mon, mon, MAX_MONTH);
+    if (crn_s->day_of_week.step)
+        step_should_exec &= ses__check_step(&crn_s->day_of_week, &prev_wday, wday, MAX_DAY_OF_WEEK);
 
-    prev_min = min;
-    prev_hour = hour;
-    prev_mday = mday;
-    prev_mon = mon;
-    prev_wday = wday;
+    if (!step_should_exec) {
+        pr_debug("Step conditions not met, no exec\n");
+        return 0;
+    }
 
     if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
         !crn_s->month.sched[mon])
@@ -241,7 +282,7 @@ static int cron__should_exec(cron_set *crn_s)
     if (check_bound(MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH, mday) &&
         !crn_s->day_of_month.sched[mday])
         exec = 0;
-    
+
     if (check_bound(MIN_HOUR, MAX_HOUR, hour) &&
         !crn_s->hour.sched[hour])
         exec = 0;
@@ -715,6 +756,7 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
             break;
         }
         ses__get_ranges(ses_tmp, ranges);
+        ses_tmp->count = -1; /* dummy starter value */
         pr_debug("%-16s ranges: %s step: %d\n", time_types[idx],
                                                 ranges[0] == 0 ? "All" : ranges,
                                                 ses_tmp->step);
