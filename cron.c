@@ -333,17 +333,18 @@ static int get_next_arg(char **pos, char *arg, int arg_size)
 static void exec(char *comm_args)
 {
     int pid;
-    char *args[MAX_ARG] = { NULL }; /* not the safest */
-    char arg[ARG_LEN] = { 0 };
-    int idx = 0;
-    char comm_strip[COMM_LEN] = { 0 };
-    char *pos = comm_args;
 
     pid = fork();
     if (pid == -1) {
         pr_err("Failed to fork\n");
         return;
     } else if (pid == 0) {
+        char *args[MAX_ARG] = { NULL }; /* not the safest */
+        char arg[ARG_LEN] = { 0 };
+        char comm_strip[COMM_LEN] = { 0 };
+        char *pos = comm_args;
+        int idx = 0;
+
         for (int i = 0; i < MAX_ARG; ++i) {
             args[i] = malloc(ARG_LEN);
             if (args[i] == NULL) {
