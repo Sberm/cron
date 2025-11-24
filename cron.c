@@ -870,6 +870,7 @@ static int start(int argc, char **argv)
         err = -1;
         goto out_free;
     }
+    pr_debug("vector capacity %lu bytes\n", vec__cap(vbuf));
 
     memset(&crn_s, 0, sizeof(crn_s));
     memset(comm_args, 0, sizeof(comm_args));

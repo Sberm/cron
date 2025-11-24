@@ -14,28 +14,29 @@ void *read_line_v(FILE *f, char *vbuf)
     size_t bytes;
 
     vec__reserve(vbuf, STEP);
+
     while ((bytes = fread(__vec__at(vbuf, idx), vec__mem_size(vbuf), min(vec__cap(vbuf) - idx, STEP), f))) {
         size_t pre_idx = idx;
-        char *vbuf_tmp = NULL;
+        char *vbuf_raw = NULL;
 
         idx += bytes;
         vec__len_inc(vbuf, bytes / vec__mem_size(vbuf));
 
-        /* if the vector is full, there's more data (or data size = vec size) */
-        if (vec__cap(vbuf) == idx)
-            vec__alloc(vbuf, STEP);
-
-        /* after vec__alloc for possible realloc */
-        vbuf_tmp = __vec__at(vbuf, 0);
-
-        /* check if there's a \n */
+        /* check if there's a newline */
+        vbuf_raw = __vec__at(vbuf, 0);
         for (size_t i = pre_idx; i < idx; i++) {
-            if (vbuf_tmp[i] == '\n') {
-                vec__resize(vbuf, i / vec__mem_size(vbuf));
+            if (vbuf_raw[i] == '\n') {
+                size_t new_size = i / vec__mem_size(vbuf);
+
+                vec__resize(vbuf, new_size);
                 goto read_out;
             }
         }
+
+        if (vec__cap(vbuf) == idx)
+            vec__alloc(vbuf, STEP);
     }
+
 read_out:
     // insert null term
     if (vec__cap(vbuf) >= vec__len(vbuf) + 1)
@@ -43,8 +44,7 @@ read_out:
     else
         *((char *)__vec__at(vbuf, vec__len(vbuf))) = '\0';
 
-    pr_debug("Read: \" " "%s" " \"\n", (char *)__vec__at(vbuf, 0));
-
+    pr_debug("Read line: \" %s \"\n", (char *)__vec__at(vbuf, 0));
     return 0;
 }
 
