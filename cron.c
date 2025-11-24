@@ -740,48 +740,48 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
     for (int idx = 0;
          idx < CRON_NUM && get_next_tok(&pos, tok, sizeof(tok));
          ++idx, ++cnt, memset(tok, 0, sizeof(tok))) {
-        int tmp;
-        Ses *ses_tmp;
+        int err;
+        Ses *ses;
         char *pos = tok;
 
         memset(ranges, 0, sizeof(ranges));
 
         switch (idx) {
         case 0:
-            ses_tmp = &crn_s->minute;
-            tmp = parse_ses(&pos, ses_tmp);
-            if (tmp)
-                return tmp;
+            ses = &crn_s->minute;
+            err = parse_ses(&pos, ses);
+            if (err)
+                return err;
             break;
         case 1:
-            ses_tmp = &crn_s->hour;
-            tmp = parse_ses(&pos, ses_tmp);
-            if (tmp)
-                return tmp;
+            ses = &crn_s->hour;
+            err = parse_ses(&pos, ses);
+            if (err)
+                return err;
             break;
         case 2:
-            ses_tmp = &crn_s->day_of_month;
-            tmp = parse_ses(&pos, ses_tmp);
-            if (tmp)
-                return tmp;
+            ses = &crn_s->day_of_month;
+            err = parse_ses(&pos, ses);
+            if (err)
+                return err;
             break;
         case 3:
-            ses_tmp = &crn_s->month;
-            tmp = parse_ses(&pos, ses_tmp);
-            if (tmp)
-                return tmp;
+            ses = &crn_s->month;
+            err = parse_ses(&pos, ses);
+            if (err)
+                return err;
             break;
         case 4:
-            ses_tmp = &crn_s->day_of_week;
-            tmp = parse_ses(&pos, ses_tmp);
-            if (tmp)
-                return tmp;
+            ses = &crn_s->day_of_week;
+            err = parse_ses(&pos, ses);
+            if (err)
+                return err;
             break;
         default:
             break;
         }
-        ses__get_ranges(ses_tmp, ranges);
-        ses_tmp->count = -1; /* dummy starter value */
+        ses__get_ranges(ses, ranges);
+        ses->count = -1; /* dummy starter value */
         pr_debug("\033[35m" "%-16s ranges: %s\n" "\033[0m", time_types[idx], ranges[0] == 0 ? "All" : ranges);
     }
 
