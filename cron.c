@@ -15,7 +15,7 @@
 #include "atoin.h"
 
 #define CRON_NUM 5
-#define NUM_LEN 32
+#define TOK_LEN 1024
 #define MAX_ARG 128
 #define ARG_LEN 256
 #define COMM_LEN 1024
@@ -729,7 +729,7 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
     /* get the raw pointer */
     char *pos = __vec__at(vbuf, 0);
     int len = vec__len(vbuf);
-    char tok[NUM_LEN];
+    char tok[TOK_LEN];
     int cnt = 0;
     size_t vbuf_siz;
     char ranges[256];
