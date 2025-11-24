@@ -39,8 +39,10 @@ void *vec__new(size_t mem_size)
 		return NULL;
 
 	vec->raw = malloc(DEFAULT_VEC_SIZE);
-	if (vec->raw == NULL)
+	if (vec->raw == NULL) {
+		free(vec);
 		return NULL;
+    }
 
 	vec->len = 0;
 	vec->mem_size = mem_size;

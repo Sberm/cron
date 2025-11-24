@@ -729,7 +729,6 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
 {
     /* get the raw pointer */
     char *pos = __vec__at(vbuf, 0);
-    int len = vec__len(vbuf);
     char tok[TOK_LEN];
     int cnt = 0;
     size_t vbuf_siz;
@@ -823,11 +822,14 @@ static int start(int argc, char **argv)
     char comm_args[COMM_LEN];
     char cron_tab_file[PATH_MAX];
     int opt;
-    int tmp;
+    int offset;
 
     memset(cron_tab_file, 0, PATH_MAX);
-    tmp = snprintf(cron_tab_file, sizeof(cron_tab_file) - 1, DEFAULT_CRONTAB_FMT, getenv(HOME));
-    cron_tab_file[tmp] = 0;
+    offset = snprintf(cron_tab_file, sizeof(cron_tab_file) - 1, DEFAULT_CRONTAB_FMT, getenv(HOME));
+    if (offset < 0 || offset > PATH_MAX - 1)
+        return -1;
+    cron_tab_file[offset] = 0;
+
     // parsing arguments to get the file name
     while ((opt = getopt(argc, argv, "hf:")) != -1) {
         int len;
