@@ -498,7 +498,7 @@ static int parse_num_lhs(char **pos, Ses *ses)
                 return 0;
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
-                pr_debug("il cha 1\n");
+                pr_debug("Illegal char on line %d\n", __LINE__);
                 return -1;
             }
         } else if (**pos == '*') {
@@ -526,12 +526,12 @@ static int parse_num_lhs(char **pos, Ses *ses)
                 parse_ses(pos, ses);
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
-                pr_debug("il cha 2\n");
+                pr_debug("Illegal char on line %d\n", __LINE__);
                 return -1;
             }
         } else {
             pr_err("Illegal character(%c)\n", **pos);
-            pr_debug("il cha 3\n");
+            pr_debug("Illegal char on line %d\n", __LINE__);
             return -1;
         }
     } else if (**pos == ',') {
@@ -553,7 +553,7 @@ static int parse_num_lhs(char **pos, Ses *ses)
         }
     } else {
         pr_err("Illegal character(%c)\n", **pos);
-        pr_debug("il cha 4\n");
+        pr_debug("Illegal char on line %d\n", __LINE__);
         return -1;
     }
     return 0;
@@ -602,11 +602,12 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
                 return 0;
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
-                pr_debug("il cha 5\n");
+                pr_debug("Illegal char on line %d\n", __LINE__);
                 return -1;
             }
         } else {
             pr_err("Illegal character(%c)\n", **pos);
+            pr_debug("Illegal char on line %d\n", __LINE__);
             return -1;
         }
     } else if (!**pos) {
@@ -628,7 +629,7 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
         }
     } else {
         pr_err("Illegal character(%c)\n", **pos);
-        pr_debug("il cha 6\n");
+        pr_debug("Illegal char on line %d\n", __LINE__);
         return -1;
     }
     return 0;
@@ -701,7 +702,7 @@ static int parse_ses(char **pos, Ses *ses)
             return err;
     } else {
         pr_err("Illegal character(%c)\n", **pos);
-        pr_debug("il cha 7\n");
+        pr_debug("Illegal char on line %d\n", __LINE__);
         return -1;
     }
     return 0;
@@ -781,8 +782,7 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
         }
         ses__get_ranges(ses_tmp, ranges);
         ses_tmp->count = -1; /* dummy starter value */
-        pr_debug("%-16s ranges: %s\n", time_types[idx],
-                                                ranges[0] == 0 ? "All" : ranges);
+        pr_debug("%-16s ranges: %s\n", time_types[idx], ranges[0] == 0 ? "All" : ranges);
     }
 
     // TODO: replace with memchr
@@ -871,6 +871,9 @@ static int start(int argc, char **argv)
     memset(&crn_s, 0, sizeof(crn_s));
     memset(comm_args, 0, sizeof(comm_args));
     err = parse(vbuf, &crn_s, comm_args, sizeof(comm_args));
+    if (err)
+        goto out_free;
+
     cron__sched(&crn_s, comm_args);
 
 out_free:
