@@ -415,6 +415,7 @@ static void ses__write_sched(Ses *ses, const int _start, const int _end, const i
     const int start = max(0, _start);
     const int end = min(MAX_SCHED - 1, (_end == -1 ? MAX_SCHED - 1 : _end));
 
+    pr_debug("start %d end %d\n", _start, _end);
     if (step < MIN_STEP) {
         pr_err("step can't be %d\n", step);
         return;
