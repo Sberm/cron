@@ -783,14 +783,13 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
         }
         ses__get_ranges(ses_tmp, ranges);
         ses_tmp->count = -1; /* dummy starter value */
-        pr_debug("%-16s ranges: %s\n", time_types[idx], ranges[0] == 0 ? "All" : ranges);
+        pr_debug("\033[35m" "%-16s ranges: %s\n" "\033[0m", time_types[idx], ranges[0] == 0 ? "All" : ranges);
     }
 
     // TODO: replace with memchr
     // go to the first non-space
     vbuf_siz = vec__len(vbuf) * vec__mem_size(vbuf);
-    for (;pos < (char *)__vec__at(vbuf, 0) + vbuf_siz &&
-          *pos == ' '; ++pos) {}
+    for (;pos < (char *)__vec__at(vbuf, 0) + vbuf_siz && *pos == ' '; ++pos) {}
 
     /* copy the rest of the string to comm_args */
     if (strncpy(comm_args, pos, min(vbuf_siz, comm_args_len)) == 0) {
