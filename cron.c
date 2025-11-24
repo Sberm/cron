@@ -33,6 +33,8 @@
 #define MIN_DAY_OF_WEEK 1
 #define MAX_DAY_OF_WEEK 7
 
+#define MIN_STEP 1
+
 #define HOME "HOME"
 #define DEFAULT_CRONTAB_FMT "%s/.crontab.txt"
 
@@ -44,7 +46,6 @@ typedef struct Ses {
      */
     int start;
     int end;
-    int step;
     int count;
     char sched[MAX_SCHED];
 } Ses;
@@ -154,41 +155,6 @@ int ses__is_interval_start(Ses *ses, const int time_val, const int max_idx)
     return 0;
 }
 
-int ses__check_step(Ses *ses, int *prev_val, const int cur_val, const int max_idx, char *ses_type)
-{
-    if (!ses || !prev_val || !ses_type)
-        return 0;
-
-    if (ses->count == -1) {
-        /* this forces execution when starting the app */
-        pr_debug("(%s) Reset count (initially -1)\n", ses_type);
-        ses->count = ses->step;
-        *prev_val = cur_val;
-        return 1;
-    }
-    if (ses__is_interval_start(ses, cur_val, max_idx)) {
-        /* this forces execution when it reaches the start of an interval */
-        pr_debug("(%s) Reset count (reaches interval start)\n", ses_type);
-        ses->count = ses->step;
-        *prev_val = cur_val;
-        return 1;
-    }
-
-    if (*prev_val != cur_val) {
-        /* goes just out-of-bound, reset the count */
-        if (ses->count == ses->step)
-            ses->count = 0;
-
-        ++ses->count;
-        *prev_val = cur_val;
-    }
-
-    pr_debug("(%s) count %d\n", ses_type, ses->count);
-    if (ses->count == ses->step)
-        return 1;
-    return 0;
-}
-
 static int cron__should_exec(cron_set *crn_s)
 {
     /* minute, hour, day of month, month, day of week */
@@ -201,12 +167,6 @@ static int cron__should_exec(cron_set *crn_s)
     static int prev_check_mday = -1;
     static int prev_check_mon = -1;
     static int prev_check_wday = -1;
-    /* time of the previous step */
-    static int prev_step_min = -1;
-    static int prev_step_hour = -1;
-    static int prev_step_mday = -1;
-    static int prev_step_mon = -1;
-    static int prev_step_wday = -1;
     int min;
     int hour;
     int mday;
@@ -278,20 +238,6 @@ static int cron__should_exec(cron_set *crn_s)
         return 0;
 
     pr_debug("Valid timestamp\n");
-
-    if (crn_s->minute.step)
-        exec &= ses__check_step(&crn_s->minute, &prev_step_min, min, MAX_MINUTE, "minute");
-    if (crn_s->hour.step)
-        exec &= ses__check_step(&crn_s->hour, &prev_step_hour, hour, MAX_HOUR, "hour");
-    if (crn_s->day_of_month.step)
-        exec &= ses__check_step(&crn_s->day_of_month, &prev_step_mday, mday, MAX_DAY_OF_MONTH, "day of month");
-    if (crn_s->month.step)
-        exec &= ses__check_step(&crn_s->month, &prev_step_mon, mon, MAX_MONTH, "month");
-    if (crn_s->day_of_week.step)
-        exec &= ses__check_step(&crn_s->day_of_week, &prev_step_wday, wday, MAX_DAY_OF_WEEK, "day of week");
-
-    if (!exec)
-        pr_debug("Step conditions not met, no exec\n");
 
     if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
         !crn_s->month.sched[mon])
@@ -464,12 +410,16 @@ static int is_legal(int tmp, char *pos, size_t n) {
     return !(tmp == 0 && strncmp(pos, zero, min(sizeof(zero), n)));
 }
 
-static void ses__write_sched(Ses *ses, const int _start, const int _end)
+static void ses__write_sched(Ses *ses, const int _start, const int _end, const int step)
 {
     const int start = max(0, _start);
     const int end = min(MAX_SCHED - 1, (_end == -1 ? MAX_SCHED - 1 : _end));
 
-    for (int i = start; i <= end; i++)
+    if (step < MIN_STEP) {
+        pr_err("step can't be %d\n", step);
+        return;
+    }
+    for (int i = start; i <= end; i += step)
         ses->sched[i] = 1;
 }
 
@@ -477,24 +427,22 @@ static int parse_ses(char **pos, Ses *ses);
 
 static int parse_step(char **pos, Ses *ses)
 {
-    int tmp;
+    int step;
 
-    ++*pos;
     if (isdigit(**pos)) { // step
         char *end = NULL;
         for(end = *pos; isdigit(*end) && *end; ++end) {}
-        tmp = atoin(*pos, end - *pos);
-        if (!is_legal(tmp, *pos, end - *pos)) {
+        step = atoin(*pos, end - *pos);
+        if (!is_legal(step, *pos, end - *pos)) {
             pr_err("Can't be converted to integer\n");
             return -1;
         }
         *pos = end;
-        ses->step = tmp;
     } else {
         pr_err("\'/\' should be followed with a number\n");
         return -1;
     }
-    return 0;
+    return step;
 }
 
 static int parse_num_lhs(char **pos, Ses *ses)
@@ -510,8 +458,9 @@ static int parse_num_lhs(char **pos, Ses *ses)
     }
     *pos = end;
     ses->start = tmp;
+
     if (!**pos) {
-        ses__write_sched(ses, ses->start, ses->start);
+        ses__write_sched(ses, ses->start, ses->start, MIN_STEP);
         return 0;
     } else if (**pos == '-') {
         ++*pos;
@@ -526,17 +475,26 @@ static int parse_num_lhs(char **pos, Ses *ses)
             }
             *pos = end;
             ses->end = tmp;
+
             if (**pos == '/') {
-                ses__write_sched(ses, ses->start, ses->end);
-                if (parse_step(pos, ses))
+                int step;
+
+                ++*pos;
+                step = parse_step(pos, ses);
+                if (step == -1)
                     return -1;
+                ses__write_sched(ses, ses->start, ses->end, step);
+
+                if (**pos == ',') {
+                    ++*pos;
+                    parse_ses(pos, ses);
+                }
             } else if (**pos == ',') {
-                ses__write_sched(ses, ses->start, ses->end);
+                ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 ++*pos;
                 parse_ses(pos, ses);
             } else if (!**pos) {
-                // single number
-                ses__write_sched(ses, ses->start, ses->end);
+                ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 return 0;
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
@@ -547,14 +505,23 @@ static int parse_num_lhs(char **pos, Ses *ses)
             ++*pos;
             ses->end = -1;
             if (**pos == '/') {
-                ses__write_sched(ses, ses->start, ses->end);
-                if (parse_step(pos, ses))
+                int step;
+
+                ++*pos;
+                step = parse_step(pos, ses);
+                if (step == -1)
                     return -1;
+                ses__write_sched(ses, ses->start, ses->end, step);
+
+                if (**pos == ',') {
+                    ++*pos;
+                    parse_ses(pos, ses);
+                }
             } else if (!**pos) {
                 // TODO: this is supposed to be legal, right?
                 return -1;
             } else if (**pos == ',') {
-                ses__write_sched(ses, ses->start, ses->end);
+                ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 ++*pos;
                 parse_ses(pos, ses);
             } else {
@@ -568,13 +535,22 @@ static int parse_num_lhs(char **pos, Ses *ses)
             return -1;
         }
     } else if (**pos == ',') {
-        ses__write_sched(ses, ses->start, ses->start);
+        ses__write_sched(ses, ses->start, ses->start, MIN_STEP);
         ++*pos;
         parse_ses(pos, ses);
     } else if (**pos == '/') {
-        ses__write_sched(ses, ses->start, -1);
-        if (parse_step(pos, ses))
+        int step;
+
+        ++*pos;
+        step = parse_step(pos, ses);
+        if (step == -1)
             return -1;
+        ses__write_sched(ses, ses->start, -1, step);
+
+        if (**pos == ',') {
+            ++*pos;
+            parse_ses(pos, ses);
+        }
     } else {
         pr_err("Illegal character(%c)\n", **pos);
         pr_debug("il cha 4\n");
@@ -588,7 +564,7 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
     ++*pos;
     ses->start = -1;
     if (**pos == ',') {
-        ses__write_sched(ses, ses->start, ses->start);
+        ses__write_sched(ses, ses->start, ses->start, MIN_STEP);
         ++*pos;
         parse_ses(pos, ses);
     } else if (**pos == '-') {
@@ -603,17 +579,26 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
             }
             *pos = end;
             ses->end = tmp;
+
             if (**pos == '/') {
-                ses__write_sched(ses, ses->start, ses->start);
-                if (parse_step(pos, ses))
+                int step;
+
+                ++*pos;
+                step = parse_step(pos, ses);
+                if (step == -1)
                     return -1;
+                ses__write_sched(ses, ses->start, ses->end, step);
+
+                if (**pos == ',') {
+                    ++*pos;
+                    parse_ses(pos, ses);
+                }
             } else if (**pos == ',') {
-                ses__write_sched(ses, ses->start, ses->start);
+                ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 ++*pos;
                 parse_ses(pos, ses);
             } else if (!**pos) {
-                // range of numbers
-                ses__write_sched(ses, ses->start, ses->start);
+                ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 return 0;
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
@@ -626,12 +611,21 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
         }
     } else if (!**pos) {
         // single asterisk, it's gonna be -1 -1
-        ses__write_sched(ses, ses->start, ses->start);
+        ses__write_sched(ses, ses->start, ses->start, MIN_STEP);
         return 0;
-    }  else if (**pos == '/') {
-        ses__write_sched(ses, ses->start, ses->start);
-        if (parse_step(pos, ses))
+    } else if (**pos == '/') {
+        int step;
+
+        ++*pos;
+        step = parse_step(pos, ses);
+        if (step == -1)
             return -1;
+        ses__write_sched(ses, ses->start, ses->start, step);
+
+        if (**pos == ',') {
+            ++*pos;
+            parse_ses(pos, ses);
+        }
     } else {
         pr_err("Illegal character(%c)\n", **pos);
         pr_debug("il cha 6\n");
@@ -655,20 +649,24 @@ static int parse_ses(char **pos, Ses *ses)
             (end | - | , | /)
             $-:
                 (num | *)
-                $num:
+                $num, $*:
                     (/ | , | end)
                     $/:
-                        (step)
+                        (step | ,)
                         $step:
                             (end)
+                        $,:
+                            (root)
                     $,:
                         (root)
             $,:
                 (root)
-            $/:  // this is broken and different from the definition
-                (step)
+            $/:
+                (step | ,)
                 $step:
                     (end)
+                $,:
+                    (root)
         $*:
             (, | - | end | /)
             $,:
@@ -678,14 +676,19 @@ static int parse_ses(char **pos, Ses *ses)
                 $num:
                     (/ | , | end)
                     $/:
-                        (step)
-                        $step: end
+                        (step | ,)
+                        $step:
+                            (end)
+                        $,:
+                            (root)
                     $,:
                         (root)
             $/:
-                (step)
+                (step | ,)
                 $step:
                     (end)
+                $,:
+                    (root)
     */
 
     if (isdigit(**pos)) {
@@ -778,9 +781,8 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
         }
         ses__get_ranges(ses_tmp, ranges);
         ses_tmp->count = -1; /* dummy starter value */
-        pr_debug("%-16s ranges: %s step: %d\n", time_types[idx],
-                                                ranges[0] == 0 ? "All" : ranges,
-                                                ses_tmp->step);
+        pr_debug("%-16s ranges: %s\n", time_types[idx],
+                                                ranges[0] == 0 ? "All" : ranges);
     }
 
     // TODO: replace with memchr
