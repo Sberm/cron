@@ -3,4 +3,4 @@ cron
 .vscode
 # executable with symbols
 cron_debug
-cron_debug.dSYM
+*.dSYM
