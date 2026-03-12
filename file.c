@@ -40,9 +40,9 @@ void *read_line_v(FILE *f, char *vbuf)
 read_out:
     // insert null term
     if (vec__cap(vbuf) >= vec__len(vbuf) + 1)
-        ((char *)__vec__at(vbuf, 0))[vec__len(vbuf)] = '\0';
+        ((char *)__vec__at(vbuf, 0))[vec__len(vbuf)] = 0;
     else
-        *((char *)__vec__at(vbuf, vec__len(vbuf))) = '\0';
+        *((char *)__vec__at(vbuf, vec__cap(vbuf) - 1)) = '\0';
 
     pr_debug("Read line: \" %s \"\n", (char *)__vec__at(vbuf, 0));
     return 0;
