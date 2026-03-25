@@ -74,9 +74,9 @@ static int get_next_tok(char **pos, char *tok, int tok_size)
     /* move till the first space */
     for (end = start; *end && *end != ' '; ++end) {}
 
-    num = min(tok_size, end - start);
+    num = min(tok_size - 1, end - start);
     strncpy(tok, start, num);
-    tok[min(num, tok_size-1)] = '\0';
+    tok[num] = '\0';
     *pos = end;
     return num;
 }
