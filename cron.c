@@ -183,27 +183,7 @@ static int cron__should_exec(cron_set *crn_s)
         return 0;
 
     pr_debug("Valid timestamp\n");
-
-    if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
-        !crn_s->month.sched[mon])
-        exec &= 0;
-
-    if (check_bound(MIN_DAY_OF_WEEK, MAX_DAY_OF_WEEK, wday) &&
-        !crn_s->day_of_week.sched[wday])
-        exec &= 0;
-
-    if (check_bound(MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH, mday) &&
-        !crn_s->day_of_month.sched[mday])
-        exec &= 0;
-
-    if (check_bound(MIN_HOUR, MAX_HOUR, hour) &&
-        !crn_s->hour.sched[hour])
-        exec &= 0;
-
-    if (check_bound(MIN_MINUTE, MAX_MINUTE, min) &&
-        !crn_s->minute.sched[min])
-        exec &= 0;
-    return exec;
+    return 1;
 }
 
 static int get_next_arg(char **pos, char *arg, int arg_size)
