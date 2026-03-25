@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <unistd.h>
 #include <time.h>
+#include <stdbool.h>
 
 #if defined(__APPLE__) || defined(__MACH__)
 #include <limits.h> /* PATH_MAX */
@@ -44,6 +45,8 @@ typedef struct Ses {
      * start and end act as temporary variables for parsing,
      * do not represent the real start and end
      */
+    // maybe now it does mean something... start == end == -1
+    // means it's *
     int start;
     int end;
     int count;
@@ -88,6 +91,14 @@ int check_bound(const int mn, const int mx, const int val)
     return 0;
 }
 
+bool is_astr(const Ses *ses)
+{
+    return ses->start == -1 && ses->end == -1;
+}
+
+/*
+ * Returns a positive number when cron should exec
+ */
 static int cron__should_exec(cron_set *crn_s)
 {
     /* minute, hour, day of month, month, day of week */
@@ -149,17 +160,50 @@ static int cron__should_exec(cron_set *crn_s)
 
     pr_debug("\n%d:%d %d/%d wday: %d\n", hour, min, mon, mday, wday);
 
-    if (check_bound(MIN_MONTH, MAX_MONTH, mon) &&
-        !crn_s->month.sched[mon])
-        return 0;
-
-    if (check_bound(MIN_DAY_OF_WEEK, MAX_DAY_OF_WEEK, wday) &&
-        !crn_s->day_of_week.sched[wday])
-        return 0;
-
-    if (check_bound(MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH, mday) &&
-        !crn_s->day_of_month.sched[mday])
-        return 0;
+    /*
+     * 1. If month, day of month, and day of week are all <asterisk> characters,
+     *    every day shall be matched.
+     *
+     * 2. month=elem/list or mday=elem/list, wday *, month and mday determines
+     *
+     * 3. month and mday both*, wday=elem/list, wday determines
+     *
+     * 4. If either month or mday is elem/list, wday is elem/list, any day either
+     *    the month and day of month, or day of week shall match
+     */
+    if (is_astr(&crn_s->month) && is_astr(&crn_s->day_of_month) &&
+        is_astr(&crn_s->day_of_week)) {
+        // legal, so don't do anything, only return when negative condition
+        // is met
+    } else if ((!is_astr(&crn_s->month) || !is_astr(&crn_s->day_of_month)) &&
+               is_astr(&crn_s->day_of_week)) {
+        // negative
+        if (!is_astr(&crn_s->month) && check_bound(MIN_MONTH, MAX_MONTH, mon) &&
+            !crn_s->month.sched[mon]) {
+            return 0;
+        }
+        if (!is_astr(&crn_s->day_of_month) && check_bound(MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH, mday) &&
+            !crn_s->day_of_month.sched[mday]) {
+            return 0;
+        }
+    } else if (is_astr(&crn_s->month) && is_astr(&crn_s->day_of_month) &&
+               !is_astr(&crn_s->day_of_week)) {
+        if (check_bound(MIN_DAY_OF_WEEK, MAX_DAY_OF_WEEK, wday) &&
+            !crn_s->day_of_week.sched[wday])
+            return 0;
+    } else if ((!is_astr(&crn_s->month) || !is_astr(&crn_s->day_of_month)) &&
+               !is_astr(&crn_s->day_of_week)) {
+        // !((mday && month) || (wday))
+        //   = !(mday && month) && !wday
+        //   = (!mday || !month) && !wday
+        bool mday_ret = check_bound(MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH, mday) && crn_s->day_of_month.sched[mday];
+        bool mon_ret = check_bound(MIN_MONTH, MAX_MONTH, mon) && crn_s->month.sched[mon];
+        bool wday_ret = check_bound(MIN_DAY_OF_WEEK, MAX_DAY_OF_WEEK, wday) && crn_s->day_of_week.sched[wday];
+        if ((!mday_ret || !mon_ret) && !wday_ret)
+            return 0;
+    } else {
+        pr_err("Invalid month + wday + mday combination\n");
+    }
 
     if (check_bound(MIN_HOUR, MAX_HOUR, hour) &&
         !crn_s->hour.sched[hour])
