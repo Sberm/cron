@@ -204,8 +204,9 @@ static int get_next_arg(char **pos, char *arg, int arg_size)
     end = *pos;
     while(*end && *end == ' ')
         ++end;
-    if (*end)
-        *pos = end;
+    if (!*end)
+        return -1;
+    *pos = end;
 
     if (**pos == '"') {
         sep = '"';
