@@ -81,61 +81,6 @@ static int get_next_tok(char **pos, char *tok, int tok_size)
     return num;
 }
 
-static int check_minute(int num)
-{
-    if ((num >= MIN_MINUTE && num <= MAX_MINUTE) ||
-         num == -1) {
-        pr_debug("Minute %d\n", num);
-        return 0;
-    }
-    pr_err("Bad minute(%d)\n", num);
-    return -1;
-}
-
-static int check_hour(int num)
-{
-    if ((num >= MIN_HOUR && num <= MAX_HOUR) ||
-         num == -1) {
-        pr_debug("Hour %d\n", num);
-        return 0;
-    }
-    pr_err("Bad hour(%d)\n", num);
-    return -1;
-}
-
-static int check_day_of_month(int num)
-{
-    if ((num >= MIN_DAY_OF_MONTH && num <= MAX_DAY_OF_MONTH) ||
-         num == -1) {
-        pr_debug("Day of month %d\n", num);
-        return 0;
-    }
-    pr_err("Bad day of month(%d)\n", num);
-    return -1;
-}
-
-static int check_month(int num)
-{
-    if ((num >= MIN_MONTH && num <= MAX_MONTH) ||
-         num == -1) {
-        pr_debug("Month %d\n", num);
-        return 0;
-    }
-    pr_err("Bad month(%d)\n", num);
-    return -1;
-}
-
-static int check_day_of_week(int num)
-{
-    if ((num >= MIN_DAY_OF_WEEK && num <= MAX_DAY_OF_WEEK) ||
-         num == -1) {
-        pr_debug("Day of week %d\n", num);
-        return 0;
-    }
-    pr_err("Bad day of week(%d)\n", num);
-    return -1;
-}
-
 int check_bound(const int mn, const int mx, const int val)
 {
     if (mn <= val && val <= mx)
