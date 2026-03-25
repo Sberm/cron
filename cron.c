@@ -88,24 +88,11 @@ int check_bound(const int mn, const int mx, const int val)
     return 0;
 }
 
-int ses__is_interval_start(Ses *ses, const int time_val, const int max_idx)
-{
-    /* there's no interval start for wildcard */
-    if (ses->start == -1 && ses->end == -1)
-        return 0;
-    int prev_index = time_val ? time_val - 1 : max_idx;
-    /* the second check is not necessary, but makes it easier to understand */
-    if (ses->sched[prev_index] == 0 && ses->sched[time_val] == 1)
-        return 1;
-    return 0;
-}
-
 static int cron__should_exec(cron_set *crn_s)
 {
     /* minute, hour, day of month, month, day of week */
     time_t raw_time;
     struct tm *info;
-    int exec = 1;
     /* time of the previous check */
     static int prev_check_min = -1;
     static int prev_check_hour = -1;
