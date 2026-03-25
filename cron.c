@@ -258,28 +258,22 @@ static void exec(char *comm_args)
         char *pos = comm_args;
         int idx = 0;
 
-        for (int i = 0; i < MAX_ARG; ++i) {
-            args[i] = malloc(ARG_LEN);
-            if (args[i] == NULL) {
-                pr_err("Failed to allocate args vector\n");
-                goto out_free;
-            }
-            memset(args[i], 0, ARG_LEN);
-        }
-
-        while(idx < MAX_ARG && !get_next_arg(&pos, arg, sizeof(arg))) {
+        while(idx < MAX_ARG - 1 && !get_next_arg(&pos, arg, sizeof(arg))) {
             if (idx == 0) // command
                 strncpy(comm_strip, arg, ARG_LEN);
+
+            args[idx] = malloc(ARG_LEN);
+            if (args[idx] == NULL) {
+                pr_err("Failed to allocate argument buffer\n");
+                goto out_free;
+            }
+
             strncpy(args[idx], arg, ARG_LEN);
             pr_debug("arg[%d] = %s\n", idx, arg);
             memset(arg, 0, ARG_LEN);
             ++idx;
         }
-
-        if (idx < MAX_ARG)
-            args[idx] = NULL;
-        else
-            args[MAX_ARG - 1] = NULL;
+        args[idx] = NULL;
 
         pr_debug("Command: %s\n", comm_strip);
         pr_debug("Arguments: [");
