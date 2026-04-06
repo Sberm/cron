@@ -840,8 +840,13 @@ static int start(int argc, char **argv)
     int offset;
 
     memset(cron_tab_file, 0, PATH_MAX);
-    offset = snprintf(cron_tab_file, sizeof(cron_tab_file) - 1, DEFAULT_CRONTAB_FMT, getenv(HOME));
-    if (offset < 0 || offset > PATH_MAX - 1)
+    char *home = getenv(HOME);
+    if (!home) {
+        pr_err("$HOME is not set\n");
+        return -1;
+    }
+    offset = snprintf(cron_tab_file, sizeof(cron_tab_file) - 1, DEFAULT_CRONTAB_FMT, home);
+    if (offset < 0 || offset >= PATH_MAX - 1)
         return -1;
     cron_tab_file[offset] = 0;
 
