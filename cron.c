@@ -713,6 +713,9 @@ static int parse_ses(char **pos, Ses *ses, int min_val, int max_val)
     return 0;
 }
 
+/*
+ * writes a ranges string only for debug purposes
+ */
 static void ses__get_ranges(const Ses *ses, char *ranges, size_t size)
 {
     const char *sched = ses->sched;
@@ -722,11 +725,18 @@ static void ses__get_ranges(const Ses *ses, char *ranges, size_t size)
         if (sched[i]) {
             if (prev_start == -1)
                 prev_start = i;
-        } else if (!sched[i] && prev_start != -1) {
-            ranges += sprintf(ranges, "%d-%d ", prev_start, i - 1);
+        } else if (prev_start != -1) {
+            int written = snprintf(ranges, size, "%d-%d ", prev_start, i - 1);
+            if (written < 0 || (size_t)written >= size)
+                return;
+            ranges += written;
+            size -= written;
             prev_start = -1;
         }
     }
+    /* flush a range that extends to the last slot */
+    if (prev_start != -1)
+        snprintf(ranges, size, "%d-%d ", prev_start, MAX_SCHED - 1);
 }
 
 static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm_args_len)
