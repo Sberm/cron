@@ -805,10 +805,11 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
     for (;pos < (char *)__vec__at(vbuf, 0) + vbuf_siz && *pos == ' '; ++pos) {}
 
     /* copy the rest of the string to comm_args */
-    if (strncpy(comm_args, pos, min(vbuf_siz, comm_args_len)) == 0) {
+    if (*pos == '\0') {
         pr_err("Empty command\n");
         return -1;
     }
+    strncpy(comm_args, pos, min(vbuf_siz, comm_args_len) - 1);
 
     if (cnt < CRON_NUM) {
         pr_err("Only has %d numbers, needs to be %d\n", cnt, CRON_NUM);
