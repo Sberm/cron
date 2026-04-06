@@ -55,6 +55,8 @@ void vec__free(void *__vec)
 {
 	struct vec *vec = __vec;
 
+	if (!vec)
+		return;
 	free(vec->raw);
 	free(vec);
 }
