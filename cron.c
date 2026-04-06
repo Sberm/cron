@@ -376,7 +376,7 @@ static void ses__write_sched(Ses *ses, const int _start, const int _end, const i
         ses->sched[i] = 1;
 }
 
-static int parse_ses(char **pos, Ses *ses);
+static int parse_ses(char **pos, Ses *ses, int min_val, int max_val);
 
 static int parse_step(char **pos, Ses *ses)
 {
@@ -395,10 +395,14 @@ static int parse_step(char **pos, Ses *ses)
         pr_err("\'/\' should be followed with a number\n");
         return -1;
     }
+    if (step < MIN_STEP) {
+        pr_err("step can't be %d\n", step);
+        return -1;
+    }
     return step;
 }
 
-static int parse_num_lhs(char **pos, Ses *ses)
+static int parse_num_lhs(char **pos, Ses *ses, int min_val, int max_val)
 {
     char *end = NULL;
 
@@ -407,6 +411,10 @@ static int parse_num_lhs(char **pos, Ses *ses)
     int tmp = atoin(*pos, end - *pos);
     if (!is_legal(tmp, *pos, end - *pos)) {
         pr_err("Can't be converted to integer\n");
+        return -1;
+    }
+    if (!check_bound(min_val, max_val, tmp)) {
+        pr_err("Value %d out of range [%d, %d]\n", tmp, min_val, max_val);
         return -1;
     }
     *pos = end;
@@ -426,6 +434,14 @@ static int parse_num_lhs(char **pos, Ses *ses)
                 pr_err("Can't be converted to integer\n");
                 return -1;
             }
+            if (!check_bound(min_val, max_val, tmp)) {
+                pr_err("Value %d out of range [%d, %d]\n", tmp, min_val, max_val);
+                return -1;
+            }
+            if (tmp < ses->start) {
+                pr_err("Range end %d is less than start %d\n", tmp, ses->start);
+                return -1;
+            }
             *pos = end;
             ses->end = tmp;
 
@@ -440,12 +456,18 @@ static int parse_num_lhs(char **pos, Ses *ses)
 
                 if (**pos == ',') {
                     ++*pos;
-                    parse_ses(pos, ses);
+                    if (parse_ses(pos, ses, min_val, max_val))
+                        return -1;
+                } else if (**pos) {
+                    pr_err("Illegal character(%c)\n", **pos);
+                    pr_debug("Illegal char on line %d\n", __LINE__);
+                    return -1;
                 }
             } else if (**pos == ',') {
                 ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 ++*pos;
-                parse_ses(pos, ses);
+                if (parse_ses(pos, ses, min_val, max_val))
+                    return -1;
             } else if (!**pos) {
                 ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 return 0;
@@ -468,15 +490,21 @@ static int parse_num_lhs(char **pos, Ses *ses)
 
                 if (**pos == ',') {
                     ++*pos;
-                    parse_ses(pos, ses);
+                    if (parse_ses(pos, ses, min_val, max_val))
+                        return -1;
+                } else if (**pos) {
+                    pr_err("Illegal character(%c)\n", **pos);
+                    pr_debug("Illegal char on line %d\n", __LINE__);
+                    return -1;
                 }
             } else if (!**pos) {
-                // TODO: this is supposed to be legal, right?
-                return -1;
+                ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
+                return 0;
             } else if (**pos == ',') {
                 ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 ++*pos;
-                parse_ses(pos, ses);
+                if (parse_ses(pos, ses, min_val, max_val))
+                    return -1;
             } else {
                 pr_err("Illegal character(%c)\n", **pos);
                 pr_debug("Illegal char on line %d\n", __LINE__);
@@ -490,7 +518,8 @@ static int parse_num_lhs(char **pos, Ses *ses)
     } else if (**pos == ',') {
         ses__write_sched(ses, ses->start, ses->start, MIN_STEP);
         ++*pos;
-        parse_ses(pos, ses);
+        if (parse_ses(pos, ses, min_val, max_val))
+            return -1;
     } else if (**pos == '/') {
         int step;
 
@@ -502,7 +531,12 @@ static int parse_num_lhs(char **pos, Ses *ses)
 
         if (**pos == ',') {
             ++*pos;
-            parse_ses(pos, ses);
+            if (parse_ses(pos, ses, min_val, max_val))
+                return -1;
+        } else if (**pos) {
+            pr_err("Illegal character(%c)\n", **pos);
+            pr_debug("Illegal char on line %d\n", __LINE__);
+            return -1;
         }
     } else {
         pr_err("Illegal character(%c)\n", **pos);
@@ -512,14 +546,16 @@ static int parse_num_lhs(char **pos, Ses *ses)
     return 0;
 }
 
-static int parse_asterisk_lhs(char **pos, Ses *ses)
+static int parse_asterisk_lhs(char **pos, Ses *ses, int min_val, int max_val)
 {
     ++*pos;
     ses->start = -1;
     if (**pos == ',') {
+        ses->end = -1;
         ses__write_sched(ses, ses->start, ses->start, MIN_STEP);
         ++*pos;
-        parse_ses(pos, ses);
+        if (parse_ses(pos, ses, min_val, max_val))
+            return -1;
     } else if (**pos == '-') {
         ++*pos;
         if (isdigit(**pos)) {
@@ -528,6 +564,10 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
             int tmp = atoin(*pos, end - *pos);
             if (!is_legal(tmp, *pos, end - *pos)) {
                 pr_err("Can't be converted to integer\n");
+                return -1;
+            }
+            if (!check_bound(min_val, max_val, tmp)) {
+                pr_err("Value %d out of range [%d, %d]\n", tmp, min_val, max_val);
                 return -1;
             }
             *pos = end;
@@ -544,12 +584,18 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
 
                 if (**pos == ',') {
                     ++*pos;
-                    parse_ses(pos, ses);
+                    if (parse_ses(pos, ses, min_val, max_val))
+                        return -1;
+                } else if (**pos) {
+                    pr_err("Illegal character(%c)\n", **pos);
+                    pr_debug("Illegal char on line %d\n", __LINE__);
+                    return -1;
                 }
             } else if (**pos == ',') {
                 ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 ++*pos;
-                parse_ses(pos, ses);
+                if (parse_ses(pos, ses, min_val, max_val))
+                    return -1;
             } else if (!**pos) {
                 ses__write_sched(ses, ses->start, ses->end, MIN_STEP);
                 return 0;
@@ -565,6 +611,7 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
         }
     } else if (!**pos) {
         // single asterisk, it's gonna be -1 -1
+        ses->end = -1;
         ses__write_sched(ses, ses->start, ses->start, MIN_STEP);
         return 0;
     } else if (**pos == '/') {
@@ -578,7 +625,12 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
 
         if (**pos == ',') {
             ++*pos;
-            parse_ses(pos, ses);
+            if (parse_ses(pos, ses, min_val, max_val))
+                return -1;
+        } else if (**pos) {
+            pr_err("Illegal character(%c)\n", **pos);
+            pr_debug("Illegal char on line %d\n", __LINE__);
+            return -1;
         }
     } else {
         pr_err("Illegal character(%c)\n", **pos);
@@ -589,7 +641,7 @@ static int parse_asterisk_lhs(char **pos, Ses *ses)
 }
 
 /* caller will clear ses */
-static int parse_ses(char **pos, Ses *ses)
+static int parse_ses(char **pos, Ses *ses, int min_val, int max_val)
 {
     int err = 0;
 
@@ -646,11 +698,11 @@ static int parse_ses(char **pos, Ses *ses)
     */
 
     if (isdigit(**pos)) {
-        err = parse_num_lhs(pos, ses);
+        err = parse_num_lhs(pos, ses, min_val, max_val);
         if (err)
             return err;
     } else if (**pos == '*') {
-        err = parse_asterisk_lhs(pos, ses);
+        err = parse_asterisk_lhs(pos, ses, min_val, max_val);
         if (err)
             return err;
     } else {
@@ -661,7 +713,7 @@ static int parse_ses(char **pos, Ses *ses)
     return 0;
 }
 
-static void ses__get_ranges(const Ses *ses, char *ranges)
+static void ses__get_ranges(const Ses *ses, char *ranges, size_t size)
 {
     const char *sched = ses->sched;
     int prev_start = -1;
@@ -701,38 +753,38 @@ static int parse(const char *vbuf, cron_set *crn_s, char *comm_args, size_t comm
         switch (idx) {
         case 0:
             ses = &crn_s->minute;
-            err = parse_ses(&pos, ses);
+            err = parse_ses(&pos, ses, MIN_MINUTE, MAX_MINUTE);
             if (err)
                 return err;
             break;
         case 1:
             ses = &crn_s->hour;
-            err = parse_ses(&pos, ses);
+            err = parse_ses(&pos, ses, MIN_HOUR, MAX_HOUR);
             if (err)
                 return err;
             break;
         case 2:
             ses = &crn_s->day_of_month;
-            err = parse_ses(&pos, ses);
+            err = parse_ses(&pos, ses, MIN_DAY_OF_MONTH, MAX_DAY_OF_MONTH);
             if (err)
                 return err;
             break;
         case 3:
             ses = &crn_s->month;
-            err = parse_ses(&pos, ses);
+            err = parse_ses(&pos, ses, MIN_MONTH, MAX_MONTH);
             if (err)
                 return err;
             break;
         case 4:
             ses = &crn_s->day_of_week;
-            err = parse_ses(&pos, ses);
+            err = parse_ses(&pos, ses, MIN_DAY_OF_WEEK, MAX_DAY_OF_WEEK);
             if (err)
                 return err;
             break;
         default:
             break;
         }
-        ses__get_ranges(ses, ranges);
+        ses__get_ranges(ses, ranges, sizeof(ranges));
         ses->count = -1; /* dummy starter value */
         pr_debug("\033[35m" "%-16s ranges: %s\n" "\033[0m", time_types[idx], ranges[0] == 0 ? "All" : ranges);
     }
