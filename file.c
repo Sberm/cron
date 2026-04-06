@@ -7,7 +7,7 @@
 #define STEP 256
 
 /* vbuf is a vector */
-void *read_line_v(FILE *f, char *vbuf)
+int read_line_v(FILE *f, char *vbuf)
 {
     int err = 0;
     size_t idx = 0;
@@ -33,8 +33,10 @@ void *read_line_v(FILE *f, char *vbuf)
             }
         }
 
-        if (vec__cap(vbuf) == idx)
-            vec__alloc(vbuf, STEP);
+        if (vec__cap(vbuf) == idx) {
+            if (vec__alloc(vbuf, STEP))
+                return -1;
+        }
     }
 
 read_out:
